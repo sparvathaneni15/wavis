@@ -1,0 +1,74 @@
+#pragma once
+
+#include "../engine/AudioEngine.h"
+#include "VisualView.h"
+
+#include <juce_gui_extra/juce_gui_extra.h>
+
+#include <string>
+#include <vector>
+
+class MainComponent : public juce::Component, private juce::Timer, private AudioEngine::Listener
+{
+public:
+    MainComponent();
+    ~MainComponent() override;
+
+    void startDemo(const juce::File& directory, int seconds);
+
+    void paint(juce::Graphics& g) override;
+    void resized() override;
+    bool keyPressed(const juce::KeyPress& key) override;
+
+private:
+    class OutputRow;
+
+    void timerCallback() override;
+    void engineChanged() override;
+    void rebuildInputs();
+    void rebuildOutputs();
+    void refreshStats();
+    void layoutControls();
+    void setProjector(bool enabled);
+    void syncFeedback();
+
+    AudioEngine engine;
+    VisualView visual;
+    juce::Label title { {}, "WAVIS" };
+    juce::Label subtitle { {}, "One input, every selected output" };
+    juce::Label driverLabel { {}, "Driver" };
+    juce::ComboBox drivers;
+    juce::Label inputLabel { {}, "Input" };
+    juce::ComboBox inputs;
+    juce::TextButton fileButton { "Audio file" };
+    juce::Label fileName;
+    juce::TextButton startButton { "Start" };
+    juce::TextButton stopButton { "Stop" };
+    juce::Label meterLabel { {}, "Level" };
+    juce::Label levelReadout;
+    juce::Label fpsLabel;
+    juce::Label modeLabel { {}, "Visual" };
+    juce::ComboBox modes;
+    juce::TextButton fullscreenButton { "Full screen" };
+    juce::Label outputLabel { {}, "Outputs" };
+    juce::Label outputCount;
+    juce::Label hint;
+    juce::Label feedback;
+    juce::TextButton muteFeedback { "Mute that output" };
+    juce::Label status;
+    juce::Viewport viewport;
+    juce::Component outputList;
+    std::unique_ptr<juce::FileChooser> chooser;
+
+    std::vector<std::string> inputIds;
+    juce::Rectangle<int> meterBounds;
+    float displayedLevel = 0.0f;
+    bool projector = false;
+    bool demo = false;
+    int demoTicks = 0;
+    int demoSeconds = 7;
+    juce::File demoDir;
+    bool buildingUi = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
+};
