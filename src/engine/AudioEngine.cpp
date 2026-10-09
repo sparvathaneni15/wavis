@@ -98,7 +98,12 @@ public:
     void audioDeviceAboutToStart(juce::AudioIODevice* device) override
     {
         if (device != nullptr)
-            engine.fanout.setInputSampleRate(device->getCurrentSampleRate());
+        {
+            const double rate = device->getCurrentSampleRate();
+            engine.fanout.setInputSampleRate(rate);
+            if (rate > 0.0)
+                engine.visualRate.store(rate, std::memory_order_relaxed);
+        }
     }
 
     void audioDeviceStopped() override {}
@@ -605,6 +610,7 @@ void AudioEngine::startSource()
             return;
         }
         fanout.setInputSampleRate(reader->sampleRate);
+        visualRate.store(reader->sampleRate > 0.0 ? reader->sampleRate : 48000.0, std::memory_order_relaxed);
         fileStop.store(false);
         fileThread = std::thread([this] { runFile(); });
         inputState = LinkState::live;
@@ -616,6 +622,7 @@ void AudioEngine::startSource()
     {
         inputId = "wavis:test-tone";
         fanout.setInputSampleRate(48000.0);
+        visualRate.store(48000.0, std::memory_order_relaxed);
         toneStop.store(false);
         toneThread = std::thread([this] { runTone(); });
         inputState = LinkState::live;
@@ -643,6 +650,7 @@ void AudioEngine::startSource()
             return;
         }
         fanout.setInputSampleRate(rate);
+        visualRate.store(rate > 0.0 ? rate : 48000.0, std::memory_order_relaxed);
         inputState = LinkState::live;
         status = "System/browser audio running.";
         return;
@@ -675,6 +683,8 @@ void AudioEngine::startSource()
     }
 
     fanout.setInputSampleRate(inputDevice->getCurrentSampleRate());
+    if (inputDevice->getCurrentSampleRate() > 0.0)
+        visualRate.store(inputDevice->getCurrentSampleRate(), std::memory_order_relaxed);
     inputCallback = std::make_unique<InputCallback>(*this);
     inputDevice->start(inputCallback.get());
     inputState = LinkState::live;
@@ -763,6 +773,12 @@ float AudioEngine::getInputLevel() const noexcept
     if (!running.load())
         return 0.0f;
     return std::clamp(level.load(std::memory_order_relaxed), 0.0f, 1.0f);
+}
+
+double AudioEngine::getVisualSampleRate() const noexcept
+{
+    const double rate = visualRate.load(std::memory_order_relaxed);
+    return rate > 0.0 ? rate : 48000.0;
 }
 
 int AudioEngine::popVisual(float* destination, int frames) noexcept

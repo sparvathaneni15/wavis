@@ -75,6 +75,7 @@ public:
     void stop();
 
     float getInputLevel() const noexcept;
+    double getVisualSampleRate() const noexcept;
     int popVisual(float* destination, int frames) noexcept;
 
     std::string getStatusLine() const;
@@ -113,6 +114,7 @@ private:
     OutputFanout fanout;
     SpscRingBuffer<float> visual { 32768 };
     std::atomic<float> level { 0.0f };
+    std::atomic<double> visualRate { 48000.0 };
     std::atomic<bool> running { false };
     std::atomic<bool> toneStop { true };
     std::atomic<bool> fileStop { true };

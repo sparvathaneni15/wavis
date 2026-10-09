@@ -1,5 +1,7 @@
 #include "core/DeviceList.h"
+#include "core/DisplayLayout.h"
 #include "core/DriftCorrector.h"
+#include "core/VisualFrame.h"
 #include "core/OutputFanout.h"
 #include "core/RoutingModel.h"
 #include "core/SettingsModel.h"
@@ -8,6 +10,7 @@
 
 #include <juce_core/juce_core.h>
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <thread>
@@ -419,12 +422,90 @@ public:
     }
 };
 
+class DisplayAndFrameTest : public juce::UnitTest
+{
+public:
+    DisplayAndFrameTest() : juce::UnitTest("Display hot-plug and visual frames", "Wavis") {}
+
+    void runTest() override
+    {
+        beginTest("monitor labels name the display and the fullscreen toggle");
+        expect(monitorId(0, 0, 1920, 1080) == "0,0,1920,1080");
+        expect(monitorLabel(2, 1920, 1080, false) == "Display 2 — 1920×1080");
+        expect(monitorLabel(1, 2560, 1440, true).find("(main)") != std::string::npos);
+        expect(fullscreenToggleLabel(3) == "Fullscreen on display 3");
+
+        MonitorDesc main { monitorId(0, 0, 1920, 1200), 0, 0, 1920, 1200, true };
+        MonitorDesc projector { monitorId(1920, 0, 1280, 720), 1920, 0, 1280, 720, false };
+        std::vector<MonitorDesc> both { main, projector };
+        expectEquals(defaultMonitorIndex(both), 0);
+        expectEquals(indexOfMonitor(both, projector.id), 1);
+
+        beginTest("removing the stage display drops back to the main window");
+        expect(stageAfterHotplug(false, projector.id, { main }) == StageDecision::unchanged);
+        expect(stageAfterHotplug(true, projector.id, both) == StageDecision::unchanged);
+        expect(stageAfterHotplug(true, projector.id, { main }) == StageDecision::exitToMainWindow);
+        expect(stageAfterHotplug(true, "", both) == StageDecision::exitToMainWindow);
+        expect(stageAfterHotplug(true, monitorId(1920, 0, 1280, 800), both) == StageDecision::exitToMainWindow);
+
+        beginTest("waveform peaks survive decimation and log bins keep frequency order");
+        float source[8] = { 0, 0, 0, 0.2f, 0, -0.9f, 0, 0 };
+        float wave[4];
+        decimatePeaks(source, 8, wave, 4);
+        expect(std::abs(wave[2]) > 0.8f);
+        expect(std::abs(wave[0]) < 0.01f);
+
+        std::vector<float> magnitudes(128, 0.0f);
+        magnitudes[3] = 1.0f;
+        float low[kSpectrumBins];
+        reduceLogBins(magnitudes.data(), static_cast<int>(magnitudes.size()), low, kSpectrumBins);
+        magnitudes[3] = 0.0f;
+        magnitudes[100] = 1.0f;
+        float high[kSpectrumBins];
+        reduceLogBins(magnitudes.data(), static_cast<int>(magnitudes.size()), high, kSpectrumBins);
+        const auto peakAt = [](const float* bins)
+        {
+            int index = 0;
+            for (int i = 1; i < kSpectrumBins; ++i)
+                if (bins[i] > bins[index])
+                    index = i;
+            return index;
+        };
+        expect(peakAt(low) < peakAt(high));
+
+        beginTest("bass, mid, and treble come from separate FFT ranges");
+        constexpr int fftSize = 2048;
+        constexpr double sampleRate = 48000.0;
+        const double binHz = sampleRate / static_cast<double>(fftSize);
+        std::vector<float> spectrum(static_cast<size_t>(fftSize / 2), 0.0f);
+        spectrum[5] = 0.2f;
+        const auto lowBand = measureBands(spectrum.data(), static_cast<int>(spectrum.size()), sampleRate, fftSize);
+        expect(lowBand.bass > 0.9f);
+        expect(lowBand.treble < 0.05f);
+        expect(5.0 * binHz > 20.0 && 5.0 * binHz < 150.0);
+
+        std::fill(spectrum.begin(), spectrum.end(), 0.0f);
+        spectrum[40] = 0.2f;
+        const auto midBand = measureBands(spectrum.data(), static_cast<int>(spectrum.size()), sampleRate, fftSize);
+        expect(midBand.mid > midBand.bass);
+        expect(midBand.mid > midBand.treble);
+
+        std::fill(spectrum.begin(), spectrum.end(), 0.0f);
+        spectrum[200] = 0.2f;
+        const auto highBand = measureBands(spectrum.data(), static_cast<int>(spectrum.size()), sampleRate, fftSize);
+        expect(highBand.treble > 0.9f);
+        expect(highBand.bass < 0.05f);
+        expect(highBand.treble > highBand.mid);
+    }
+};
+
 static RingBufferTest ringBufferTest;
 static DriftTest driftTest;
 static FanoutTest fanoutTest;
 static DeviceListTest deviceListTest;
 static SourceAndFeedbackTest sourceAndFeedbackTest;
 static SettingsTest settingsTest;
+static DisplayAndFrameTest displayAndFrameTest;
 
 int main()
 {

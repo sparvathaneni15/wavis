@@ -71,6 +71,7 @@ VisualView::VisualView(AudioEngine& engine) : audio(engine)
 
     context.setRenderer(this);
     context.setContinuousRepainting(true);
+    context.setComponentPaintingEnabled(false);
     context.setSwapInterval(1);
     context.attachTo(*this);
 }
@@ -215,10 +216,10 @@ void VisualView::drawVertices(GLenum drawMode, const std::vector<float>& verts)
 void VisualView::drawOscilloscope()
 {
     using namespace juce::gl;
-    glClearColor(0.02f, 0.04f, 0.025f, 1.0f);
+    glClearColor(0.02f, 0.015f, 0.04f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     vertices.clear();
-    addQuad(vertices, -1.0f, -1.0f, 1.0f, 1.0f, 0.02f, 0.035f, 0.025f, 1.0f);
+    addQuad(vertices, -1.0f, -1.0f, 1.0f, 1.0f, 0.02f, 0.015f, 0.045f, 1.0f);
     const int n = static_cast<int>(history.size());
     const int windowSize = std::min(n, 1024);
     const int newest = std::max(0, n - windowSize);
@@ -233,12 +234,12 @@ void VisualView::drawOscilloscope()
             const float x1 = -1.0f + 2.0f * static_cast<float>(i + 1) / static_cast<float>(count - 1);
             const float y0 = std::clamp(history[static_cast<size_t>(start + i)] * 1.6f, -1.0f, 1.0f) * 0.82f;
             const float y1 = std::clamp(history[static_cast<size_t>(start + i + 1)] * 1.6f, -1.0f, 1.0f) * 0.82f;
-            addVert(vertices, x0, 0.0f, 0.20f, 0.32f, 0.08f, 0.55f);
-            addVert(vertices, x1, 0.0f, 0.20f, 0.32f, 0.08f, 0.55f);
-            addVert(vertices, x1, y1, 0.84f, 1.0f, 0.32f, 1.0f);
-            addVert(vertices, x0, 0.0f, 0.20f, 0.32f, 0.08f, 0.55f);
-            addVert(vertices, x1, y1, 0.84f, 1.0f, 0.32f, 1.0f);
-            addVert(vertices, x0, y0, 0.84f, 1.0f, 0.32f, 1.0f);
+            addVert(vertices, x0, 0.0f, 0.18f, 0.08f, 0.28f, 0.45f);
+            addVert(vertices, x1, 0.0f, 0.18f, 0.08f, 0.28f, 0.45f);
+            addVert(vertices, x1, y1, 0.24f, 0.94f, 1.0f, 1.0f);
+            addVert(vertices, x0, 0.0f, 0.18f, 0.08f, 0.28f, 0.45f);
+            addVert(vertices, x1, y1, 0.24f, 0.94f, 1.0f, 1.0f);
+            addVert(vertices, x0, y0, 0.24f, 0.94f, 1.0f, 1.0f);
         }
     }
     drawVertices(GL_TRIANGLES, vertices);
@@ -247,7 +248,7 @@ void VisualView::drawOscilloscope()
 void VisualView::drawSpectrum()
 {
     using namespace juce::gl;
-    glClearColor(0.04f, 0.05f, 0.09f, 1.0f);
+    glClearColor(0.03f, 0.02f, 0.06f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     const int size = fft != nullptr ? fft->getSize() : 0;
@@ -276,7 +277,7 @@ void VisualView::drawSpectrum()
         peaks[i] = levels[i] >= peaks[i] ? levels[i] : std::max(0.0f, peaks[i] - 0.02f);
 
     vertices.clear();
-    addQuad(vertices, -1.0f, -1.0f, 1.0f, 1.0f, 0.035f, 0.045f, 0.09f, 1.0f);
+    addQuad(vertices, -1.0f, -1.0f, 1.0f, 1.0f, 0.03f, 0.02f, 0.06f, 1.0f);
     for (int i = 0; i < bars; ++i)
     {
         const float level = i < static_cast<int>(levels.size()) ? std::clamp(levels[static_cast<size_t>(i)] * 8.0f, 0.0f, 1.0f) : 0.0f;
@@ -285,7 +286,7 @@ void VisualView::drawSpectrum()
         const float y0 = -0.9f;
         const float y1 = y0 + level * 1.75f;
         const float hue = static_cast<float>(i) / bars;
-        addQuad(vertices, x0, y0, x1, y1, 1.0f, 0.55f + 0.3f * hue, 0.15f, 1.0f);
+        addQuad(vertices, x0, y0, x1, y1, 0.35f + 0.6f * hue, 0.25f + 0.55f * (1.0f - hue), 1.0f, 1.0f);
     }
     drawVertices(GL_TRIANGLES, vertices);
 }
@@ -293,7 +294,7 @@ void VisualView::drawSpectrum()
 void VisualView::drawRadial()
 {
     using namespace juce::gl;
-    glClearColor(0.05f, 0.02f, 0.07f, 1.0f);
+    glClearColor(0.04f, 0.02f, 0.08f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     rotation += 0.01f;
 
@@ -318,7 +319,7 @@ void VisualView::drawRadial()
     std::vector<float> levels;
     logBars(magnitudes, rays, levels);
     vertices.clear();
-    addQuad(vertices, -1.0f, -1.0f, 1.0f, 1.0f, 0.06f, 0.02f, 0.08f, 1.0f);
+    addQuad(vertices, -1.0f, -1.0f, 1.0f, 1.0f, 0.05f, 0.02f, 0.09f, 1.0f);
     drawVertices(GL_TRIANGLES, vertices);
 
     vertices.clear();
@@ -331,12 +332,12 @@ void VisualView::drawRadial()
         const float outer = inner + level * 0.72f;
         const float a0 = angle - half;
         const float a1 = angle + half;
-        addVert(vertices, std::cos(a0) * inner, std::sin(a0) * inner, 0.95f, 0.35f, 0.75f, 0.85f);
-        addVert(vertices, std::cos(a0) * outer, std::sin(a0) * outer, 0.75f, 0.95f, 1.0f, 1.0f);
-        addVert(vertices, std::cos(a1) * outer, std::sin(a1) * outer, 0.75f, 0.95f, 1.0f, 1.0f);
-        addVert(vertices, std::cos(a0) * inner, std::sin(a0) * inner, 0.95f, 0.35f, 0.75f, 0.85f);
-        addVert(vertices, std::cos(a1) * outer, std::sin(a1) * outer, 0.75f, 0.95f, 1.0f, 1.0f);
-        addVert(vertices, std::cos(a1) * inner, std::sin(a1) * inner, 0.95f, 0.35f, 0.75f, 0.85f);
+        addVert(vertices, std::cos(a0) * inner, std::sin(a0) * inner, 0.55f, 0.28f, 1.0f, 0.85f);
+        addVert(vertices, std::cos(a0) * outer, std::sin(a0) * outer, 0.24f, 0.94f, 1.0f, 1.0f);
+        addVert(vertices, std::cos(a1) * outer, std::sin(a1) * outer, 1.0f, 0.17f, 0.84f, 1.0f);
+        addVert(vertices, std::cos(a0) * inner, std::sin(a0) * inner, 0.55f, 0.28f, 1.0f, 0.85f);
+        addVert(vertices, std::cos(a1) * outer, std::sin(a1) * outer, 1.0f, 0.17f, 0.84f, 1.0f);
+        addVert(vertices, std::cos(a1) * inner, std::sin(a1) * inner, 0.55f, 0.28f, 1.0f, 0.85f);
     }
     drawVertices(GL_TRIANGLES, vertices);
 }

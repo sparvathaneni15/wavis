@@ -1,7 +1,9 @@
 #pragma once
 
+#include "../core/DisplayLayout.h"
 #include "../engine/AudioEngine.h"
-#include "VisualView.h"
+#include "EscapeGrab.h"
+#include "VisualHost.h"
 
 #include <juce_gui_extra/juce_gui_extra.h>
 
@@ -22,18 +24,21 @@ public:
 
 private:
     class OutputRow;
+    class StageWindow;
 
     void timerCallback() override;
     void engineChanged() override;
     void rebuildInputs();
     void rebuildOutputs();
     void refreshStats();
+    void refreshDisplays();
     void layoutControls();
-    void setProjector(bool enabled);
+    void setStage(bool enabled);
     void syncFeedback();
+    std::vector<MonitorDesc> collectMonitors() const;
 
     AudioEngine engine;
-    VisualView visual;
+    VisualHost visual;
     juce::Label title { {}, "WAVIS" };
     juce::Label subtitle { {}, "One input, every selected output" };
     juce::Label driverLabel { {}, "Driver" };
@@ -49,7 +54,10 @@ private:
     juce::Label fpsLabel;
     juce::Label modeLabel { {}, "Visual" };
     juce::ComboBox modes;
-    juce::TextButton fullscreenButton { "Full screen" };
+    juce::Label displayLabel { {}, "Display" };
+    juce::ComboBox displayBox;
+    juce::ToggleButton stageButton { "Fullscreen on display 1" };
+    juce::Label backendLabel;
     juce::Label outputLabel { {}, "Outputs" };
     juce::Label outputCount;
     juce::Label hint;
@@ -59,14 +67,19 @@ private:
     juce::Viewport viewport;
     juce::Component outputList;
     std::unique_ptr<juce::FileChooser> chooser;
+    std::unique_ptr<StageWindow> stage;
+    EscapeGrab escapeGrab;
 
     std::vector<std::string> inputIds;
+    std::vector<MonitorDesc> monitors;
+    std::string selectedMonitorId;
     juce::Rectangle<int> meterBounds;
     float displayedLevel = 0.0f;
-    bool projector = false;
+    bool stageOpen = false;
     bool demo = false;
     int demoTicks = 0;
     int demoSeconds = 7;
+    int demoShots = 0;
     juce::File demoDir;
     bool buildingUi = false;
 

@@ -72,7 +72,7 @@ public:
         detail.setText(statusLineFor(next), juce::dontSendNotification);
         detail.setColour(juce::Label::textColourId,
                          next.status == "Disconnected" || next.status == "Error" ? juce::Colour(0xffff8d96)
-                         : next.status == "Live"                                 ? juce::Colour(0xffd6ff4a)
+                         : next.status == "Live"                                 ? juce::Colour(0xff5cefff)
                                                                                   : juce::Colour(0xff9b978e));
     }
 
@@ -109,6 +109,43 @@ private:
     juce::Label detail;
 };
 
+class MainComponent::StageWindow : public juce::DocumentWindow
+{
+public:
+    StageWindow() : juce::DocumentWindow({}, juce::Colours::black, 0)
+    {
+        setUsingNativeTitleBar(false);
+        setTitleBarHeight(0);
+        setDropShadowEnabled(false);
+        setResizable(false, false);
+        setAlwaysOnTop(true);
+        setWantsKeyboardFocus(true);
+    }
+
+    int getDesktopWindowStyleFlags() const override
+    {
+        return juce::ComponentPeer::windowIsTemporary;
+    }
+
+    bool keyPressed(const juce::KeyPress& key) override
+    {
+        if (key == juce::KeyPress::escapeKey && onExit)
+        {
+            onExit();
+            return true;
+        }
+        return juce::DocumentWindow::keyPressed(key);
+    }
+
+    void closeButtonPressed() override
+    {
+        if (onExit)
+            onExit();
+    }
+
+    std::function<void()> onExit;
+};
+
 MainComponent::MainComponent() : visual(engine)
 {
     setWantsKeyboardFocus(true);
@@ -120,30 +157,32 @@ MainComponent::MainComponent() : visual(engine)
                                     static_cast<juce::Component*>(&startButton), static_cast<juce::Component*>(&stopButton),
                                     static_cast<juce::Component*>(&meterLabel), static_cast<juce::Component*>(&levelReadout),
                                     static_cast<juce::Component*>(&fpsLabel), static_cast<juce::Component*>(&modeLabel),
-                                    static_cast<juce::Component*>(&modes), static_cast<juce::Component*>(&fullscreenButton),
-                                    static_cast<juce::Component*>(&outputLabel), static_cast<juce::Component*>(&outputCount),
+                                    static_cast<juce::Component*>(&modes), static_cast<juce::Component*>(&displayLabel),
+                                    static_cast<juce::Component*>(&displayBox), static_cast<juce::Component*>(&stageButton),
+                                    static_cast<juce::Component*>(&backendLabel), static_cast<juce::Component*>(&outputLabel),
+                                    static_cast<juce::Component*>(&outputCount),
                                     static_cast<juce::Component*>(&hint), static_cast<juce::Component*>(&feedback),
                                     static_cast<juce::Component*>(&muteFeedback), static_cast<juce::Component*>(&status),
                                     static_cast<juce::Component*>(&viewport) })
         addAndMakeVisible(child);
 
     title.setFont(juce::Font(juce::FontOptions(18.0f, juce::Font::bold)));
-    title.setColour(juce::Label::textColourId, juce::Colour(0xffd6ff4a));
+    title.setColour(juce::Label::textColourId, juce::Colour(0xff5cefff));
     subtitle.setColour(juce::Label::textColourId, juce::Colour(0xff9b978e));
     hint.setColour(juce::Label::textColourId, juce::Colour(0xffc8c2b4));
     feedback.setColour(juce::Label::textColourId, juce::Colour(0xffffc1c6));
     status.setColour(juce::Label::textColourId, juce::Colour(0xfff4f1ea));
     fileName.setColour(juce::Label::textColourId, juce::Colour(0xff9b978e));
-    for (auto* label : { &driverLabel, &inputLabel, &meterLabel, &modeLabel, &outputLabel })
+    for (auto* label : { &driverLabel, &inputLabel, &meterLabel, &modeLabel, &displayLabel, &backendLabel, &outputLabel })
         label->setColour(juce::Label::textColourId, juce::Colour(0xff9b978e));
 
-    startButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffd6ff4a));
+    startButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff5cefff));
     startButton.setColour(juce::TextButton::textColourOffId, juce::Colour(0xff14160c));
     muteFeedback.setColour(juce::TextButton::buttonColourId, juce::Colour(0xffff5d6c));
 
-    modes.addItem("Oscilloscope", 1);
+    modes.addItem("Waveform", 1);
     modes.addItem("Spectrum", 2);
-    modes.addItem("Radial", 3);
+    modes.addItem("3D scene", 3);
     const auto visualMode = engine.getVisualMode();
     modes.setSelectedId(visualMode == "spectrum" ? 2 : visualMode == "radial" ? 3 : 1, juce::dontSendNotification);
     visual.setMode(visualMode);
@@ -171,7 +210,22 @@ MainComponent::MainComponent() : visual(engine)
     };
     startButton.onClick = [this] { engine.start(); grabKeyboardFocus(); };
     stopButton.onClick = [this] { engine.stop(); };
-    fullscreenButton.onClick = [this] { setProjector(!projector); };
+    stageButton.onClick = [this] { setStage(stageButton.getToggleState()); };
+    stageButton.setTooltip("Borderless on the whole chosen display. Esc leaves it.");
+    displayBox.onChange = [this]
+    {
+        if (buildingUi)
+            return;
+        const int index = displayBox.getSelectedItemIndex();
+        if (index >= 0 && index < static_cast<int>(monitors.size()))
+        {
+            selectedMonitorId = monitors[static_cast<size_t>(index)].id;
+            stageButton.setButtonText(fullscreenToggleLabel(index + 1));
+            if (stageOpen)
+                setStage(true);
+        }
+    };
+    visual.setExitFullscreen([this] { setStage(false); });
     muteFeedback.onClick = [this] { engine.muteFeedbackOutputs(); };
     fileButton.onClick = [this]
     {
@@ -191,6 +245,7 @@ MainComponent::MainComponent() : visual(engine)
     engine.addListener(this);
     rebuildInputs();
     rebuildOutputs();
+    refreshDisplays();
     refreshStats();
     startTimerHz(15);
     setSize(1200, 740);
@@ -306,6 +361,7 @@ void MainComponent::refreshStats()
     }
     outputCount.setText(juce::String(selected) + " selected", juce::dontSendNotification);
     status.setText(engine.getStatusLine(), juce::dontSendNotification);
+    backendLabel.setText(visual.backendLabel(), juce::dontSendNotification);
     fileName.setText(engine.getFileName(), juce::dontSendNotification);
     fpsLabel.setText(engine.isRunning() && visual.getFramesPerSecond() > 0 ? juce::String(visual.getFramesPerSecond()) + " fps"
                                                                             : juce::String("--"),
@@ -320,8 +376,8 @@ void MainComponent::syncFeedback()
 {
     const auto hits = engine.getFeedbackOutputIds();
     const bool show = !hits.empty();
-    feedback.setVisible(show && !projector);
-    muteFeedback.setVisible(show && !projector);
+    feedback.setVisible(show);
+    muteFeedback.setVisible(show);
     if (show)
         feedback.setText("Feedback loop: this system/browser input is routed back to the device being captured.",
                          juce::dontSendNotification);
@@ -329,77 +385,196 @@ void MainComponent::syncFeedback()
 
 void MainComponent::timerCallback()
 {
+    if (stageOpen && escapeGrab.consumeEscape())
+        setStage(false);
+
     const float target = engine.getInputLevel();
     displayedLevel = std::max(target, displayedLevel * 0.85f);
     levelReadout.setText(juce::String(juce::roundToInt(displayedLevel * 100.0f)) + "%", juce::dontSendNotification);
+    refreshDisplays();
     refreshStats();
     repaint();
 
     if (!demo)
         return;
     ++demoTicks;
-    if (demoTicks == 20)
+
+    const bool ready = visual.hasLiveFrames();
+    if (demoShots == 0 && ready && demoTicks >= 40)
     {
-        demoDir.getChildFile("wavis_oscilloscope.png").deleteFile();
-        visual.requestCapture(demoDir.getChildFile("wavis_oscilloscope.png"));
+        visual.setMode("oscilloscope");
+        modes.setSelectedId(1, juce::dontSendNotification);
+        visual.requestCapture(demoDir.getChildFile("wavis_waveform.png"));
+        demoShots = 1;
     }
-    else if (demoTicks == 45)
+    else if (demoShots == 1 && demoTicks >= 85)
     {
         visual.setMode("spectrum");
         modes.setSelectedId(2, juce::dontSendNotification);
         engine.setVisualMode("spectrum");
+        demoShots = 2;
     }
-    else if (demoTicks == 70)
+    else if (demoShots == 2 && demoTicks >= 115)
+    {
         visual.requestCapture(demoDir.getChildFile("wavis_spectrum.png"));
-    else if (demoTicks == 95)
+        demoShots = 3;
+    }
+    else if (demoShots == 3 && demoTicks >= 140)
     {
         visual.setMode("radial");
         modes.setSelectedId(3, juce::dontSendNotification);
         engine.setVisualMode("radial");
+        demoShots = 4;
     }
-    else if (demoTicks == 120)
-        visual.requestCapture(demoDir.getChildFile("wavis_radial.png"));
-    else if (demoTicks >= demoSeconds * 15)
+    else if (demoShots == 4 && demoTicks >= 200)
+    {
+        visual.requestCapture(demoDir.getChildFile("wavis_scene.png"));
+        demoShots = 5;
+    }
+    else if ((demoShots >= 5 && demoTicks >= 230) || demoTicks >= std::max(demoSeconds * 15, 280))
         juce::JUCEApplication::getInstance()->systemRequestedQuit();
 }
 
-void MainComponent::setProjector(bool enabled)
+std::vector<MonitorDesc> MainComponent::collectMonitors() const
 {
-    projector = enabled;
-    fullscreenButton.setButtonText(projector ? "Exit" : "Full screen");
-    if (auto* window = findParentComponentOfClass<juce::DocumentWindow>())
-        window->setFullScreen(projector);
-    resized();
+    std::vector<MonitorDesc> found;
+    const auto& displays = juce::Desktop::getInstance().getDisplays().displays;
+    for (const auto& display : displays)
+    {
+        const auto physical = display.physicalBounds;
+        const auto logical = display.logicalBounds.getSmallestIntegerContainer();
+        MonitorDesc monitor;
+        monitor.id = monitorId(physical.getX(), physical.getY(), physical.getWidth(), physical.getHeight());
+        monitor.x = logical.getX();
+        monitor.y = logical.getY();
+        monitor.width = std::max(1, logical.getWidth());
+        monitor.height = std::max(1, logical.getHeight());
+        monitor.main = display.isMain;
+        found.push_back(std::move(monitor));
+    }
+    return found;
+}
+
+void MainComponent::refreshDisplays()
+{
+    const auto next = collectMonitors();
+    const bool same = next.size() == monitors.size()
+                      && std::equal(next.begin(), next.end(), monitors.begin(),
+                                    [](const MonitorDesc& a, const MonitorDesc& b) { return a.id == b.id && a.main == b.main; });
+    monitors = next;
+
+    if (stageAfterHotplug(stageOpen, selectedMonitorId, monitors) == StageDecision::exitToMainWindow)
+        setStage(false);
+
+    if (indexOfMonitor(monitors, selectedMonitorId) < 0)
+    {
+        const int fallback = defaultMonitorIndex(monitors);
+        selectedMonitorId = fallback >= 0 ? monitors[static_cast<size_t>(fallback)].id : std::string();
+    }
+
+    if (!same)
+    {
+        buildingUi = true;
+        displayBox.clear(juce::dontSendNotification);
+        int id = 1;
+        int selected = 1;
+        for (const auto& monitor : monitors)
+        {
+            displayBox.addItem(monitorLabel(id, monitor.width, monitor.height, monitor.main), id);
+            if (monitor.id == selectedMonitorId)
+                selected = id;
+            ++id;
+        }
+        if (displayBox.getNumItems() > 0)
+            displayBox.setSelectedId(selected, juce::dontSendNotification);
+        buildingUi = false;
+    }
+
+    const int index = indexOfMonitor(monitors, selectedMonitorId);
+    stageButton.setButtonText(fullscreenToggleLabel(index >= 0 ? index + 1 : 1));
+    stageButton.setEnabled(!monitors.empty());
+
+    if (stageOpen && stage != nullptr && index >= 0)
+    {
+        const auto& monitor = monitors[static_cast<size_t>(index)];
+        stage->setBounds(monitor.x, monitor.y, monitor.width, monitor.height);
+    }
+}
+
+void MainComponent::setStage(bool enabled)
+{
+    if (enabled)
+    {
+        const int index = indexOfMonitor(monitors, selectedMonitorId);
+        if (index < 0)
+        {
+            stageButton.setToggleState(false, juce::dontSendNotification);
+            stageOpen = false;
+            visual.setPictureFullscreen(false);
+            escapeGrab.setArmed(false);
+            return;
+        }
+
+        const auto& monitor = monitors[static_cast<size_t>(index)];
+        if (stage == nullptr)
+        {
+            stage = std::make_unique<StageWindow>();
+            stage->onExit = [this] { setStage(false); };
+        }
+
+        stage->setContentNonOwned(&visual, false);
+        stage->setBounds(monitor.x, monitor.y, std::max(1, monitor.width), std::max(1, monitor.height));
+        stage->setVisible(true);
+        stage->toFront(true);
+        stage->grabKeyboardFocus();
+        visual.grabKeyboardFocus();
+        stageOpen = true;
+    }
+    else
+    {
+        if (stage != nullptr)
+        {
+            stage->clearContentComponent();
+            stage->setVisible(false);
+        }
+        addAndMakeVisible(visual);
+        stageOpen = false;
+        resized();
+    }
+
+    stageButton.setToggleState(stageOpen, juce::dontSendNotification);
+    visual.setPictureFullscreen(stageOpen);
+    escapeGrab.setArmed(stageOpen);
+    const int index = indexOfMonitor(monitors, selectedMonitorId);
+    stageButton.setButtonText(fullscreenToggleLabel(index >= 0 ? index + 1 : 1));
 }
 
 void MainComponent::paint(juce::Graphics& g)
 {
     g.fillAll(juce::Colour(0xff101218));
-    if (!projector)
+    auto meter = meterBounds;
+    g.setColour(juce::Colour(0xff23262f));
+    g.fillRoundedRectangle(meter.toFloat(), 5.0f);
+    g.setColour(juce::Colour(0xff5cefff));
+    auto filled = meter.withWidth(juce::roundToInt(meter.getWidth() * displayedLevel));
+    g.fillRoundedRectangle(filled.toFloat(), 5.0f);
+    if (stageOpen)
     {
-        auto meter = meterBounds;
-        g.setColour(juce::Colour(0xff23262f));
-        g.fillRoundedRectangle(meter.toFloat(), 5.0f);
-        g.setColour(juce::Colour(0xffd6ff4a));
-        auto filled = meter.withWidth(juce::roundToInt(meter.getWidth() * displayedLevel));
-        g.fillRoundedRectangle(filled.toFloat(), 5.0f);
+        g.setColour(juce::Colour(0xff9b978e));
+        g.drawFittedText("Picture is on " + stageButton.getButtonText() + ". Esc returns it here.",
+                         getLocalBounds().withTrimmedLeft(420).reduced(24), juce::Justification::centred, 3);
     }
 }
 
 void MainComponent::resized()
 {
-    visual.setBounds(projector ? getLocalBounds() : getLocalBounds().withTrimmedLeft(400));
+    if (!stageOpen)
+        visual.setBounds(getLocalBounds().withTrimmedLeft(400));
     layoutControls();
 }
 
 void MainComponent::layoutControls()
 {
-    const bool show = !projector;
-    for (auto* child : getChildren())
-        if (child != &visual)
-            child->setVisible(show);
-    if (!show)
-        return;
     syncFeedback();
 
     auto area = juce::Rectangle<int>(16, 14, 368, getHeight() - 28);
@@ -408,7 +583,6 @@ void MainComponent::layoutControls()
     area.removeFromTop(8);
     auto header = area.removeFromTop(28);
     fpsLabel.setBounds(header.removeFromRight(70));
-    fullscreenButton.setBounds(header.removeFromRight(110).reduced(0, 2));
     driverLabel.setBounds(area.removeFromTop(16));
     drivers.setBounds(area.removeFromTop(28));
     area.removeFromTop(8);
@@ -430,7 +604,12 @@ void MainComponent::layoutControls()
     area.removeFromTop(8);
     modeLabel.setBounds(area.removeFromTop(16));
     modes.setBounds(area.removeFromTop(28));
-    area.removeFromTop(8);
+    area.removeFromTop(6);
+    displayLabel.setBounds(area.removeFromTop(16));
+    displayBox.setBounds(area.removeFromTop(28));
+    stageButton.setBounds(area.removeFromTop(28));
+    backendLabel.setBounds(area.removeFromTop(18));
+    area.removeFromTop(6);
     auto outHead = area.removeFromTop(16);
     outputLabel.setBounds(outHead.removeFromLeft(80));
     outputCount.setBounds(outHead);
@@ -464,12 +643,12 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     }
     if (key.getTextCharacter() == 'f' || key.getTextCharacter() == 'F')
     {
-        setProjector(!projector);
+        setStage(!stageOpen);
         return true;
     }
-    if (key == juce::KeyPress::escapeKey && projector)
+    if (key == juce::KeyPress::escapeKey && stageOpen)
     {
-        setProjector(false);
+        setStage(false);
         return true;
     }
     return false;
