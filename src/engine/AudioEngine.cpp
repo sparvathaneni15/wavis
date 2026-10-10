@@ -220,10 +220,15 @@ std::vector<AudioEngine::InputChoice> AudioEngine::getInputs() const
     std::vector<InputChoice> choices;
     choices.push_back({ "wavis:test-tone", "Test tone", false });
     choices.push_back({ "wavis:file", "Audio file", false });
+    std::vector<AudioEndpoint> visibleInputs;
     for (const auto& ep : endpoints)
+        if (ep.input && driverVisible(ep.driver))
+            visibleInputs.push_back(ep);
+    if (driver == "All drivers")
+        visibleInputs = collapseDuplicateDevices(visibleInputs, std::set<std::string> { inputId });
+
+    for (const auto& ep : visibleInputs)
     {
-        if (!ep.input || !driverVisible(ep.driver))
-            continue;
         choices.push_back({ ep.id, ep.label.empty() ? ep.deviceName : ep.label, ep.systemAudio });
     }
 
@@ -231,7 +236,7 @@ std::vector<AudioEngine::InputChoice> AudioEngine::getInputs() const
     for (const auto& choice : choices)
         found = found || choice.id == inputId;
     if (!found && !inputId.empty())
-        choices.push_back({ inputId, "Disconnected — " + inputId, false });
+        choices.push_back({ inputId, "Disconnected â€” " + inputId, false });
     return choices;
 }
 
@@ -252,12 +257,32 @@ void AudioEngine::setInputId(const std::string& id)
 std::vector<AudioEngine::OutputChoice> AudioEngine::getOutputs() const
 {
     std::vector<OutputChoice> choices;
+    std::vector<OutputRoute> visibleRoutes;
     for (const auto& route : routes)
     {
         if (route.available && !driverVisible(route.driver))
             continue;
         if (!route.available && !route.selected)
             continue;
+        visibleRoutes.push_back(route);
+    }
+    if (driver == "All drivers")
+    {
+        std::set<std::string> selectedIds;
+        std::vector<OutputRoute> available;
+        std::vector<OutputRoute> unavailable;
+        for (const auto& route : visibleRoutes)
+        {
+            if (route.selected)
+                selectedIds.insert(route.id);
+            (route.available ? available : unavailable).push_back(route);
+        }
+        visibleRoutes = collapseDuplicateDevices(available, selectedIds);
+        visibleRoutes.insert(visibleRoutes.end(), unavailable.begin(), unavailable.end());
+    }
+
+    for (const auto& route : visibleRoutes)
+    {
 
         OutputChoice choice;
         choice.id = route.id;
@@ -739,7 +764,7 @@ void AudioEngine::start()
     if (inputState == LinkState::live)
     {
         if (liveCount == 0)
-            status += " Video only — no outputs selected.";
+            status += " Video only â€” no outputs selected.";
         else
             status += " Routing to " + std::to_string(liveCount) + (liveCount == 1 ? " output." : " outputs.");
     }

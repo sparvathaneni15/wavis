@@ -26,6 +26,7 @@ struct OutputRoute
     bool muted = false;
     bool selected = false;
     bool available = false;
+    bool systemAudio = false;
     LinkState state = LinkState::idle;
 };
 

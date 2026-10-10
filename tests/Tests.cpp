@@ -275,6 +275,22 @@ public:
         expect(updates[0].shouldOpen);
         expect(!updates[0].shouldClose);
 
+        beginTest("the same device under several drivers is listed once in the all-drivers view");
+        const auto wasapi = makeEndpoint("Windows Audio", "Speakers", false, true);
+        const auto dsound = makeEndpoint("DirectSound", "Speakers", false, true);
+        const auto asio = makeEndpoint("ASIO", " speakers ", false, true);
+        const auto other = makeEndpoint("DirectSound", "Booth", false, true);
+        const auto loopA = makeEndpoint("WASAPI Loopback", "id-a", true, false, true);
+        const auto loopB = makeEndpoint("WASAPI Loopback", "id-b", true, false, true);
+
+        auto collapsed = collapseDuplicateDevices<AudioEndpoint>({ wasapi, dsound, asio, other, loopA, loopB }, {});
+        expectEquals(static_cast<int>(collapsed.size()), 4);
+        expect(collapsed[0].id == wasapi.id);
+
+        collapsed = collapseDuplicateDevices<AudioEndpoint>({ wasapi, dsound, other }, { dsound.id });
+        expectEquals(static_cast<int>(collapsed.size()), 2);
+        expect(collapsed[0].id == dsound.id);
+
         beginTest("a stopped session does not open devices, and an error is not retried until the device returns");
         OutputRoute ready = selectedRoute("out", true, LinkState::idle);
         auto stopped = planPresence({ ready }, false);
@@ -314,9 +330,9 @@ public:
         expect(isSystemAudioName("ALSA", "Monitor of Built-in Audio Analog Stereo"));
         expect(isPulseMonitor("alsa_output.pci-0000_00_1f.3.analog-stereo.monitor", "Built-in Audio"));
         expect(labelPulseSource("alsa_output.pci.monitor", "Built-in Audio Analog Stereo")
-                   .find("System/Browser audio — Monitor of ") == 0);
+                   .find("System/Browser audio â€” Monitor of ") == 0);
         expect(isSystemAudioName("WASAPI", "Speakers (loopback)"));
-        expect(systemAudioLabel("Speakers (loopback)").find("System/Browser audio — ") == 0);
+        expect(systemAudioLabel("Speakers (loopback)").find("System/Browser audio â€” ") == 0);
         expect(isSystemAudioName("CoreAudio", "BlackHole 2ch"));
         expect(isSystemAudioName("CoreAudio", "Loopback Audio"));
         expect(isSystemAudioName("CoreAudio", "Soundflower (2ch)"));
@@ -332,12 +348,12 @@ public:
         booth.label = "Headphones";
         booth.deviceName = "Headphones";
 
-        auto hits = findFeedbackLoops("System/Browser audio — Monitor of Built-in Audio Analog Stereo", true, { speakers, booth });
+        auto hits = findFeedbackLoops("System/Browser audio â€” Monitor of Built-in Audio Analog Stereo", true, { speakers, booth });
         expectEquals(static_cast<int>(hits.size()), 1);
         expect(hits[0].outputId == speakers.id);
 
         speakers.muted = true;
-        hits = findFeedbackLoops("System/Browser audio — Monitor of Built-in Audio Analog Stereo", true, { speakers, booth });
+        hits = findFeedbackLoops("System/Browser audio â€” Monitor of Built-in Audio Analog Stereo", true, { speakers, booth });
         expect(hits.empty());
 
         speakers.muted = false;
@@ -347,13 +363,13 @@ public:
         OutputRoute loop = selectedRoute("WASAPI::speakers", true, LinkState::live);
         loop.label = "Speakers (Realtek)";
         loop.deviceName = "Speakers (Realtek)";
-        hits = findFeedbackLoops("System/Browser audio — Speakers (Realtek) (loopback)", true, { loop });
+        hits = findFeedbackLoops("System/Browser audio â€” Speakers (Realtek) (loopback)", true, { loop });
         expectEquals(static_cast<int>(hits.size()), 1);
 
         OutputRoute hole = selectedRoute("CoreAudio::BlackHole 2ch", true, LinkState::live);
         hole.label = "BlackHole 2ch";
         hole.deviceName = "BlackHole 2ch";
-        hits = findFeedbackLoops("System/Browser audio — BlackHole 2ch", true, { hole });
+        hits = findFeedbackLoops("System/Browser audio â€” BlackHole 2ch", true, { hole });
         expectEquals(static_cast<int>(hits.size()), 1);
 
         beginTest("macOS explains the missing native loopback only when none is present");
@@ -431,7 +447,7 @@ public:
     {
         beginTest("monitor labels name the display and the fullscreen toggle");
         expect(monitorId(0, 0, 1920, 1080) == "0,0,1920,1080");
-        expect(monitorLabel(2, 1920, 1080, false) == "Display 2 — 1920×1080");
+        expect(monitorLabel(2, 1920, 1080, false) == "Display 2 â€” 1920Ã—1080");
         expect(monitorLabel(1, 2560, 1440, true).find("(main)") != std::string::npos);
         expect(fullscreenToggleLabel(3) == "Fullscreen on display 3");
 

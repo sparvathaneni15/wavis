@@ -1,5 +1,8 @@
 #pragma once
 
+#include <cctype>
+#include <map>
+#include <set>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -74,4 +77,41 @@ inline ListDiff diffEndpoints(const std::vector<AudioEndpoint>& previous, const 
             diff.removedIds.push_back(ep.id);
 
     return diff;
+}
+
+// The same physical device is often exposed by several drivers (e.g. Windows Audio, DirectSound, ASIO).
+// In the "All drivers" view that makes one channel selectable repeatedly, so keep one entry per
+// device name and direction. Ids in `preferredIds` (current selection) win; otherwise the first
+// entry in driver order is kept. System-audio sources are distinct by id and never merged.
+template <typename T>
+std::vector<T> collapseDuplicateDevices(const std::vector<T>& items, const std::set<std::string>& preferredIds)
+{
+    auto keyOf = [](const T& item)
+    {
+        if (item.systemAudio)
+            return std::string("sys|") + item.id;
+        std::string name = item.deviceName;
+        const auto begin = name.find_first_not_of(" \t");
+        const auto end = name.find_last_not_of(" \t");
+        name = begin == std::string::npos ? std::string() : name.substr(begin, end - begin + 1);
+        for (auto& c : name)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        return name;
+    };
+
+    std::vector<T> result;
+    std::map<std::string, size_t> slotByKey;
+    for (const auto& item : items)
+    {
+        const auto key = keyOf(item);
+        const auto it = slotByKey.find(key);
+        if (it == slotByKey.end())
+        {
+            slotByKey[key] = result.size();
+            result.push_back(item);
+        }
+        else if (preferredIds.count(item.id) != 0 && preferredIds.count(result[it->second].id) == 0)
+            result[it->second] = item;
+    }
+    return result;
 }
