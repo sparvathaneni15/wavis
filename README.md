@@ -46,7 +46,7 @@ Three modes, switched from the Visual menu or keys `1`, `2`, `3`:
 
 - **Waveform** — a thin glowing stroke of the native samples, with a short fading trail
 - **Spectrum** — slim rounded bars lit from within, with a faint reflection under them
-- **3D scene** — a wireframe form, glowing particles with short trails, and a colour volume that fills the view
+- **3D scene** — a wireframe form, glowing particles with short trails, a colour volume that fills the view, and a room whose speaker cabinets you can drag
 
 The Three.js library, post-processing passes, and shaders are bundled at build time (`web/src/main.js` via esbuild into `web/dist/app.js`) and served through JUCE’s resource provider.
 
@@ -61,15 +61,25 @@ Bass, mid, and treble are measured in native code from the same 2048-point FFT a
 | Treble | 2000 Hz up to 16 kHz or Nyquist | Fast shimmer and sparkle; part of size and brightness |
 | Level | Peak of the source | The accent hue, slowly, from cyan toward magenta. A smaller share also lifts the volume’s brightness. |
 
-Each band is a peak in that Hz range, scaled the same way as the log bins and clamped to 0…1. The page then applies a fast attack and a slow release (`VISUAL.attack` / `VISUAL.release` in `web/src/main.js`) before anything is drawn. The accent uses a slower follow (`VISUAL.accentFollow`) so loudness shifts the colour instead of flashing it. Bar heights use the same attack and release. The waveform’s slow release is the fading trail of earlier strokes.
+Each band is a peak in that Hz range, scaled by 12 like the log bins. The page receives that energy unclamped (`measureBandsOpen`), then compresses it (below) and applies a fast attack and a slow release (`VISUAL.attack` / `VISUAL.release` in `web/src/main.js`) before anything is drawn. The accent uses a slower follow (`VISUAL.accentFollow`) so loudness shifts the colour instead of flashing it. Bar heights use the same attack and release. The waveform’s slow release is the fading trail of earlier strokes.
 
-Every one of those gains, plus bloom, particle counts, well positions, and the colour volume, lives in the `VISUAL` object at the top of `web/src/main.js`.
+Every one of those gains, plus bloom, particle counts, well positions, the colour volume, and the room, lives in the `VISUAL` object at the top of `web/src/main.js`.
+
+### Keeping loud music from flashing white
+
+A loud, full mix used to fill the picture with white. The native FFT is unnormalised, so `peak * 12` was then hard-clamped to 1. Broadband music sat on that ceiling for bass, mid, treble, every log bin, and the level at once. The page treated 1 as full drive: bloom strength climbed past 1 with a low threshold, particle brightness climbed past 2 across hundreds of additive points, and the colour volume added several bright samples. Tone mapping was off and the materials were unmapped, so anything above 1 clipped to white. The test tone only lights a few partials, so it stayed coloured while music did not.
+
+The picture now has its own dynamics, separate from the audio outputs. A slow peak follower (attack 10/s, release 0.28/s, a few seconds) tracks recent energy and sets a makeup gain, capped by `maxMakeup` so a quiet passage is not lifted all the way to the target. A soft knee (`tanh`) then bends values above `knee` toward a ceiling of 1 and never crosses it. The fast attack and slow release still run after that, so a bass hit reads louder than the recent average and then eases off, instead of sitting at a constant maximum. Bloom strength, volume energy, and particle brightness are hard-capped, the shader clamps additive colour, and the renderer uses ACES filmic tone mapping. Every few frames the page reads a small copy of the canvas; if its average luminance is above the guard ceiling, exposure is reduced. The knobs are `VISUAL.dynamics` (`target`, `knee`, `ceiling`, `maxMakeup`, `peakAttack`, `peakRelease`, `maxBloom`, `maxEnergy`, `maxBrightness`, `maxParticleProduct`, `addCap`, `luminanceCeiling`).
+
+`--demo-dir` holds a full-scale probe and a music-like varying probe on the 3D scene and logs `WAVIS_LUMA`. The run prints `WAVIS_LUMA_OK` when both stay under 0.62 and the music probe still moves (max − min above 0.015). That pass continues after the three stills, so allow about 40 seconds even if `--demo-seconds` is shorter.
 
 ### 3D scene
 
 Particle motion is a CPU loop over typed arrays (a few hundred particles). Each particle is launched with an outward speed and a sideways speed, then pushed further outward — mids set that expansion — and pulled by one or two invisible wells. A pull toward a well bends a path that is not aimed straight at it, so the trails curve. Bass sets the wells’ mass, with the same fast attack and slow release, so a bass hit bends trajectories harder and they ease back. Trails keep the last few positions. Their colour runs from cyan to magenta as speed rises near a well. Treble adds a fast positional shimmer and occasional bright sparkles. The wireframe at the origin scales with bass.
 
 The background is a raymarched colour volume on the inside of a large sphere (a GPU fragment shader, not an empty clear colour). The field mixes cyan, magenta, and violet from layers along x, y, and z, a little 3D noise, and a hue that changes with depth and with time. Before the field is sampled, the shader bends the sample coordinate toward the same wells the particles use, in proportion to bass mass, so the colour itself curves instead of sitting in flat sheets. Overall loudness moves the hue slowly. `VISUAL.gradient` holds the step count, octave count, warp, energy, and palette.
+
+The same 3D scene is also the speaker room. A floor and three walls (open toward the camera) sit in the colour volume, in the same cyan / magenta / violet palette. Each selected output is one cabinet on the floor, up to the existing limit of 16, with the output name on a small label. Drag a cabinet and it stays where you put it: the page calls the native `placeSpeaker` function, and the spot is written into the `WAVIS1` settings as `speaker=<id>`, a tab, then x and z. Positions are clamped to the floor (`kSpeakerFloorHalf`, 3.6). An output you have not placed yet starts on an arc with the other unplaced speakers. Deselecting an output removes its cabinet; selecting it again restores the saved spot. The cabinets are only a picture of the routes — audio still goes out through the devices, not through the page.
 
 The target is 60 fps. After a short warmup, if a frame takes longer than `VISUAL.budgetMs` for several frames in a row, the page turns bloom off, shortens trails, draws fewer particles, and drops the volume to fewer steps and one noise octave. It restores the full look only after many fast frames.
 
@@ -89,7 +99,7 @@ The Display menu lists `juce::Desktop::getDisplays()`. **Fullscreen on display N
 
 ## Settings
 
-Driver, input, visual mode, file path, and each output’s gain, mute, and selection are stored with `juce::ApplicationProperties` under the key `state`. The payload is a small `WAVIS1` text document. Gains are clamped to 0…1.
+Driver, input, visual mode, file path, each output’s gain, mute, and selection, and each speaker’s floor position are stored with `juce::ApplicationProperties` under the key `state`. The payload is a small `WAVIS1` text document. Gains are clamped to 0…1. Speaker lines are `speaker=<id>`, a tab, x, a tab, and z. Older files without those lines still load; those speakers use the default arc until you drag them.
 
 ## Build
 
@@ -154,7 +164,7 @@ Start the app and press **Start**. With no outputs selected, the test tone still
 - **System or browser audio.** On Windows, choose **WASAPI Loopback** (or All drivers) and a **System/Browser audio** entry. On Linux, choose **PulseAudio** and an entry that starts with **System/Browser audio — Monitor of**. On macOS, install BlackHole or Loopback, route the browser to that device, then select the matching **System/Browser audio** input. If the hint says macOS has no native loopback, none of those drivers was detected.
 - **No hardware.** Leave the input on **Test tone**, or choose **Audio file** and pick a wav, aiff, flac, ogg, or mp3. A virtual cable (VB-Cable, BlackHole, a Pulse null sink) is the stand-in for a controller: it shows up as an ordinary input, or as system audio when its name matches the rules above.
 
-Headless check. The app starts the test tone, cycles Waveform, Spectrum, and 3D scene, and writes a PNG of the Three.js canvas (or the OpenGL fallback) plus `WAVIS_FRAME_VARIANCE`:
+Headless check. The app starts the test tone, cycles Waveform, Spectrum, and 3D scene (the scene still includes two labelled cabinets, and one of them is moved before the still), then runs the loud and music-like luminance probes. It writes a PNG of the Three.js canvas (or the OpenGL fallback) plus `WAVIS_FRAME_VARIANCE`, and logs `WAVIS_LUMA` / `WAVIS_LUMA_OK`. Allow about 40 seconds:
 
 ```bash
 ./build/Wavis_artefacts/Release/Wavis --demo-dir /tmp/wavis-demo --demo-seconds 20
@@ -162,7 +172,7 @@ Headless check. The app starts the test tone, cycles Waveform, Spectrum, and 3D 
 
 ## Tests
 
-`WavisTests` covers the lock-free ring, drift planning, fan-out of one signal to several simulated outputs (including with drift correction on), device-list diffing, reconnect when a selected device leaves and returns, system-audio classification, the feedback-loop check, settings parse/apply, monitor hot-plug (the stage returns to the main window when its display id is gone), the native waveform/FFT framing sent to Three.js, and the bass/mid/treble split of that FFT.
+`WavisTests` covers the lock-free ring, drift planning, fan-out of one signal to several simulated outputs (including with drift correction on), device-list diffing, reconnect when a selected device leaves and returns, system-audio classification, the feedback-loop check, settings parse/apply (including speaker spots, floor clamp, and the default arc), the visual soft-knee compressor, monitor hot-plug (the stage returns to the main window when its display id is gone), the native waveform/FFT framing sent to Three.js, and the bass/mid/treble split of that FFT.
 
 ```bash
 ./build/WavisTests_artefacts/Release/WavisTests

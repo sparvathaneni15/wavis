@@ -21,6 +21,7 @@ public:
     void setMode(const std::string& mode);
     void setPictureFullscreen(bool enabled);
     void requestCapture(const juce::File& file);
+    void evaluate(const juce::String& script, std::function<void(juce::String)> done);
     int getFramesPerSecond() const noexcept { return fps.load(); }
     bool hasLiveFrames() const noexcept { return framesSent.load() > 0; }
     static std::string backendName();

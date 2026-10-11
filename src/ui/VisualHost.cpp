@@ -96,6 +96,14 @@ void VisualHost::requestCapture(const juce::File& file)
         gl->requestCapture(file);
 }
 
+void VisualHost::evaluate(const juce::String& script, std::function<void(juce::String)> done)
+{
+    if (web != nullptr)
+        web->evaluate(script, std::move(done));
+    else if (done)
+        done({});
+}
+
 int VisualHost::getFramesPerSecond() const noexcept
 {
     if (web != nullptr)

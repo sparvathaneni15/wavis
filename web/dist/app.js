@@ -3942,12 +3942,12 @@
       scale.z = sz;
       return this;
     }
-    makePerspective(left, right, top, bottom, near, far, coordinateSystem = WebGLCoordinateSystem) {
+    makePerspective(left, right, top2, bottom, near, far, coordinateSystem = WebGLCoordinateSystem) {
       const te = this.elements;
       const x = 2 * near / (right - left);
-      const y = 2 * near / (top - bottom);
+      const y = 2 * near / (top2 - bottom);
       const a = (right + left) / (right - left);
-      const b = (top + bottom) / (top - bottom);
+      const b = (top2 + bottom) / (top2 - bottom);
       let c, d;
       if (coordinateSystem === WebGLCoordinateSystem) {
         c = -(far + near) / (far - near);
@@ -3976,13 +3976,13 @@
       te[15] = 0;
       return this;
     }
-    makeOrthographic(left, right, top, bottom, near, far, coordinateSystem = WebGLCoordinateSystem) {
+    makeOrthographic(left, right, top2, bottom, near, far, coordinateSystem = WebGLCoordinateSystem) {
       const te = this.elements;
       const w = 1 / (right - left);
-      const h = 1 / (top - bottom);
+      const h = 1 / (top2 - bottom);
       const p = 1 / (far - near);
       const x = (right + left) * w;
-      const y = (top + bottom) * h;
+      const y = (top2 + bottom) * h;
       let z, zInv;
       if (coordinateSystem === WebGLCoordinateSystem) {
         z = (far + near) * p;
@@ -6740,7 +6740,7 @@
       }
       return target;
     }
-    raycast(raycaster, intersects) {
+    raycast(raycaster2, intersects) {
       const geometry = this.geometry;
       const material = this.material;
       const matrixWorld = this.matrixWorld;
@@ -6748,19 +6748,19 @@
       if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
       _sphere$6.copy(geometry.boundingSphere);
       _sphere$6.applyMatrix4(matrixWorld);
-      _ray$3.copy(raycaster.ray).recast(raycaster.near);
+      _ray$3.copy(raycaster2.ray).recast(raycaster2.near);
       if (_sphere$6.containsPoint(_ray$3.origin) === false) {
         if (_ray$3.intersectSphere(_sphere$6, _sphereHitAt) === null) return;
-        if (_ray$3.origin.distanceToSquared(_sphereHitAt) > (raycaster.far - raycaster.near) ** 2) return;
+        if (_ray$3.origin.distanceToSquared(_sphereHitAt) > (raycaster2.far - raycaster2.near) ** 2) return;
       }
       _inverseMatrix$3.copy(matrixWorld).invert();
-      _ray$3.copy(raycaster.ray).applyMatrix4(_inverseMatrix$3);
+      _ray$3.copy(raycaster2.ray).applyMatrix4(_inverseMatrix$3);
       if (geometry.boundingBox !== null) {
         if (_ray$3.intersectsBox(geometry.boundingBox) === false) return;
       }
-      this._computeIntersections(raycaster, intersects, _ray$3);
+      this._computeIntersections(raycaster2, intersects, _ray$3);
     }
-    _computeIntersections(raycaster, intersects, rayLocalSpace) {
+    _computeIntersections(raycaster2, intersects, rayLocalSpace) {
       let intersection;
       const geometry = this.geometry;
       const material = this.material;
@@ -6782,7 +6782,7 @@
               const a = index.getX(j);
               const b = index.getX(j + 1);
               const c = index.getX(j + 2);
-              intersection = checkGeometryIntersection(this, groupMaterial, raycaster, rayLocalSpace, uv, uv1, normal, a, b, c);
+              intersection = checkGeometryIntersection(this, groupMaterial, raycaster2, rayLocalSpace, uv, uv1, normal, a, b, c);
               if (intersection) {
                 intersection.faceIndex = Math.floor(j / 3);
                 intersection.face.materialIndex = group.materialIndex;
@@ -6797,7 +6797,7 @@
             const a = index.getX(i);
             const b = index.getX(i + 1);
             const c = index.getX(i + 2);
-            intersection = checkGeometryIntersection(this, material, raycaster, rayLocalSpace, uv, uv1, normal, a, b, c);
+            intersection = checkGeometryIntersection(this, material, raycaster2, rayLocalSpace, uv, uv1, normal, a, b, c);
             if (intersection) {
               intersection.faceIndex = Math.floor(i / 3);
               intersects.push(intersection);
@@ -6815,7 +6815,7 @@
               const a = j;
               const b = j + 1;
               const c = j + 2;
-              intersection = checkGeometryIntersection(this, groupMaterial, raycaster, rayLocalSpace, uv, uv1, normal, a, b, c);
+              intersection = checkGeometryIntersection(this, groupMaterial, raycaster2, rayLocalSpace, uv, uv1, normal, a, b, c);
               if (intersection) {
                 intersection.faceIndex = Math.floor(j / 3);
                 intersection.face.materialIndex = group.materialIndex;
@@ -6830,7 +6830,7 @@
             const a = i;
             const b = i + 1;
             const c = i + 2;
-            intersection = checkGeometryIntersection(this, material, raycaster, rayLocalSpace, uv, uv1, normal, a, b, c);
+            intersection = checkGeometryIntersection(this, material, raycaster2, rayLocalSpace, uv, uv1, normal, a, b, c);
             if (intersection) {
               intersection.faceIndex = Math.floor(i / 3);
               intersects.push(intersection);
@@ -6840,29 +6840,29 @@
       }
     }
   };
-  function checkIntersection$1(object, material, raycaster, ray, pA, pB, pC, point) {
-    let intersect;
+  function checkIntersection$1(object, material, raycaster2, ray, pA, pB, pC, point) {
+    let intersect2;
     if (material.side === BackSide) {
-      intersect = ray.intersectTriangle(pC, pB, pA, true, point);
+      intersect2 = ray.intersectTriangle(pC, pB, pA, true, point);
     } else {
-      intersect = ray.intersectTriangle(pA, pB, pC, material.side === FrontSide, point);
+      intersect2 = ray.intersectTriangle(pA, pB, pC, material.side === FrontSide, point);
     }
-    if (intersect === null) return null;
+    if (intersect2 === null) return null;
     _intersectionPointWorld.copy(point);
     _intersectionPointWorld.applyMatrix4(object.matrixWorld);
-    const distance = raycaster.ray.origin.distanceTo(_intersectionPointWorld);
-    if (distance < raycaster.near || distance > raycaster.far) return null;
+    const distance = raycaster2.ray.origin.distanceTo(_intersectionPointWorld);
+    if (distance < raycaster2.near || distance > raycaster2.far) return null;
     return {
       distance,
       point: _intersectionPointWorld.clone(),
       object
     };
   }
-  function checkGeometryIntersection(object, material, raycaster, ray, uv, uv1, normal, a, b, c) {
+  function checkGeometryIntersection(object, material, raycaster2, ray, uv, uv1, normal, a, b, c) {
     object.getVertexPosition(a, _vA$1);
     object.getVertexPosition(b, _vB$1);
     object.getVertexPosition(c, _vC$1);
-    const intersection = checkIntersection$1(object, material, raycaster, ray, _vA$1, _vB$1, _vC$1, _intersectionPoint);
+    const intersection = checkIntersection$1(object, material, raycaster2, ray, _vA$1, _vB$1, _vC$1, _intersectionPoint);
     if (intersection) {
       const barycoord = new Vector3();
       Triangle.getBarycoord(_intersectionPoint, _vA$1, _vB$1, _vC$1, barycoord);
@@ -7321,21 +7321,21 @@
     }
     updateProjectionMatrix() {
       const near = this.near;
-      let top = near * Math.tan(DEG2RAD * 0.5 * this.fov) / this.zoom;
-      let height = 2 * top;
+      let top2 = near * Math.tan(DEG2RAD * 0.5 * this.fov) / this.zoom;
+      let height = 2 * top2;
       let width = this.aspect * height;
       let left = -0.5 * width;
       const view = this.view;
       if (this.view !== null && this.view.enabled) {
         const fullWidth = view.fullWidth, fullHeight = view.fullHeight;
         left += view.offsetX * width / fullWidth;
-        top -= view.offsetY * height / fullHeight;
+        top2 -= view.offsetY * height / fullHeight;
         width *= view.width / fullWidth;
         height *= view.height / fullHeight;
       }
       const skew = this.filmOffset;
       if (skew !== 0) left += near * skew / this.getFilmWidth();
-      this.projectionMatrix.makePerspective(left, left + width, top, top - height, near, this.far, this.coordinateSystem);
+      this.projectionMatrix.makePerspective(left, left + width, top2, top2 - height, near, this.far, this.coordinateSystem);
       this.projectionMatrixInverse.copy(this.projectionMatrix).invert();
     }
     toJSON(meta) {
@@ -9431,7 +9431,7 @@
     };
   }
   var OrthographicCamera = class extends Camera {
-    constructor(left = -1, right = 1, top = 1, bottom = -1, near = 0.1, far = 2e3) {
+    constructor(left = -1, right = 1, top2 = 1, bottom = -1, near = 0.1, far = 2e3) {
       super();
       this.isOrthographicCamera = true;
       this.type = "OrthographicCamera";
@@ -9439,7 +9439,7 @@
       this.view = null;
       this.left = left;
       this.right = right;
-      this.top = top;
+      this.top = top2;
       this.bottom = bottom;
       this.near = near;
       this.far = far;
@@ -9491,17 +9491,17 @@
       const cy = (this.top + this.bottom) / 2;
       let left = cx - dx;
       let right = cx + dx;
-      let top = cy + dy;
+      let top2 = cy + dy;
       let bottom = cy - dy;
       if (this.view !== null && this.view.enabled) {
         const scaleW = (this.right - this.left) / this.view.fullWidth / this.zoom;
         const scaleH = (this.top - this.bottom) / this.view.fullHeight / this.zoom;
         left += scaleW * this.view.offsetX;
         right = left + scaleW * this.view.width;
-        top -= scaleH * this.view.offsetY;
-        bottom = top - scaleH * this.view.height;
+        top2 -= scaleH * this.view.offsetY;
+        bottom = top2 - scaleH * this.view.height;
       }
-      this.projectionMatrix.makeOrthographic(left, right, top, bottom, this.near, this.far, this.coordinateSystem);
+      this.projectionMatrix.makeOrthographic(left, right, top2, bottom, this.near, this.far, this.coordinateSystem);
       this.projectionMatrixInverse.copy(this.projectionMatrix).invert();
     }
     toJSON(meta) {
@@ -18218,6 +18218,412 @@ void main() {
       return data;
     }
   };
+  var InterleavedBuffer = class {
+    constructor(array, stride) {
+      this.isInterleavedBuffer = true;
+      this.array = array;
+      this.stride = stride;
+      this.count = array !== void 0 ? array.length / stride : 0;
+      this.usage = StaticDrawUsage;
+      this.updateRanges = [];
+      this.version = 0;
+      this.uuid = generateUUID();
+    }
+    onUploadCallback() {
+    }
+    set needsUpdate(value) {
+      if (value === true) this.version++;
+    }
+    setUsage(value) {
+      this.usage = value;
+      return this;
+    }
+    addUpdateRange(start, count) {
+      this.updateRanges.push({ start, count });
+    }
+    clearUpdateRanges() {
+      this.updateRanges.length = 0;
+    }
+    copy(source) {
+      this.array = new source.array.constructor(source.array);
+      this.count = source.count;
+      this.stride = source.stride;
+      this.usage = source.usage;
+      return this;
+    }
+    copyAt(index1, attribute, index2) {
+      index1 *= this.stride;
+      index2 *= attribute.stride;
+      for (let i = 0, l = this.stride; i < l; i++) {
+        this.array[index1 + i] = attribute.array[index2 + i];
+      }
+      return this;
+    }
+    set(value, offset = 0) {
+      this.array.set(value, offset);
+      return this;
+    }
+    clone(data) {
+      if (data.arrayBuffers === void 0) {
+        data.arrayBuffers = {};
+      }
+      if (this.array.buffer._uuid === void 0) {
+        this.array.buffer._uuid = generateUUID();
+      }
+      if (data.arrayBuffers[this.array.buffer._uuid] === void 0) {
+        data.arrayBuffers[this.array.buffer._uuid] = this.array.slice(0).buffer;
+      }
+      const array = new this.array.constructor(data.arrayBuffers[this.array.buffer._uuid]);
+      const ib = new this.constructor(array, this.stride);
+      ib.setUsage(this.usage);
+      return ib;
+    }
+    onUpload(callback) {
+      this.onUploadCallback = callback;
+      return this;
+    }
+    toJSON(data) {
+      if (data.arrayBuffers === void 0) {
+        data.arrayBuffers = {};
+      }
+      if (this.array.buffer._uuid === void 0) {
+        this.array.buffer._uuid = generateUUID();
+      }
+      if (data.arrayBuffers[this.array.buffer._uuid] === void 0) {
+        data.arrayBuffers[this.array.buffer._uuid] = Array.from(new Uint32Array(this.array.buffer));
+      }
+      return {
+        uuid: this.uuid,
+        buffer: this.array.buffer._uuid,
+        type: this.array.constructor.name,
+        stride: this.stride
+      };
+    }
+  };
+  var _vector$6 = /* @__PURE__ */ new Vector3();
+  var InterleavedBufferAttribute = class _InterleavedBufferAttribute {
+    constructor(interleavedBuffer, itemSize, offset, normalized = false) {
+      this.isInterleavedBufferAttribute = true;
+      this.name = "";
+      this.data = interleavedBuffer;
+      this.itemSize = itemSize;
+      this.offset = offset;
+      this.normalized = normalized;
+    }
+    get count() {
+      return this.data.count;
+    }
+    get array() {
+      return this.data.array;
+    }
+    set needsUpdate(value) {
+      this.data.needsUpdate = value;
+    }
+    applyMatrix4(m) {
+      for (let i = 0, l = this.data.count; i < l; i++) {
+        _vector$6.fromBufferAttribute(this, i);
+        _vector$6.applyMatrix4(m);
+        this.setXYZ(i, _vector$6.x, _vector$6.y, _vector$6.z);
+      }
+      return this;
+    }
+    applyNormalMatrix(m) {
+      for (let i = 0, l = this.count; i < l; i++) {
+        _vector$6.fromBufferAttribute(this, i);
+        _vector$6.applyNormalMatrix(m);
+        this.setXYZ(i, _vector$6.x, _vector$6.y, _vector$6.z);
+      }
+      return this;
+    }
+    transformDirection(m) {
+      for (let i = 0, l = this.count; i < l; i++) {
+        _vector$6.fromBufferAttribute(this, i);
+        _vector$6.transformDirection(m);
+        this.setXYZ(i, _vector$6.x, _vector$6.y, _vector$6.z);
+      }
+      return this;
+    }
+    getComponent(index, component) {
+      let value = this.array[index * this.data.stride + this.offset + component];
+      if (this.normalized) value = denormalize(value, this.array);
+      return value;
+    }
+    setComponent(index, component, value) {
+      if (this.normalized) value = normalize(value, this.array);
+      this.data.array[index * this.data.stride + this.offset + component] = value;
+      return this;
+    }
+    setX(index, x) {
+      if (this.normalized) x = normalize(x, this.array);
+      this.data.array[index * this.data.stride + this.offset] = x;
+      return this;
+    }
+    setY(index, y) {
+      if (this.normalized) y = normalize(y, this.array);
+      this.data.array[index * this.data.stride + this.offset + 1] = y;
+      return this;
+    }
+    setZ(index, z) {
+      if (this.normalized) z = normalize(z, this.array);
+      this.data.array[index * this.data.stride + this.offset + 2] = z;
+      return this;
+    }
+    setW(index, w) {
+      if (this.normalized) w = normalize(w, this.array);
+      this.data.array[index * this.data.stride + this.offset + 3] = w;
+      return this;
+    }
+    getX(index) {
+      let x = this.data.array[index * this.data.stride + this.offset];
+      if (this.normalized) x = denormalize(x, this.array);
+      return x;
+    }
+    getY(index) {
+      let y = this.data.array[index * this.data.stride + this.offset + 1];
+      if (this.normalized) y = denormalize(y, this.array);
+      return y;
+    }
+    getZ(index) {
+      let z = this.data.array[index * this.data.stride + this.offset + 2];
+      if (this.normalized) z = denormalize(z, this.array);
+      return z;
+    }
+    getW(index) {
+      let w = this.data.array[index * this.data.stride + this.offset + 3];
+      if (this.normalized) w = denormalize(w, this.array);
+      return w;
+    }
+    setXY(index, x, y) {
+      index = index * this.data.stride + this.offset;
+      if (this.normalized) {
+        x = normalize(x, this.array);
+        y = normalize(y, this.array);
+      }
+      this.data.array[index + 0] = x;
+      this.data.array[index + 1] = y;
+      return this;
+    }
+    setXYZ(index, x, y, z) {
+      index = index * this.data.stride + this.offset;
+      if (this.normalized) {
+        x = normalize(x, this.array);
+        y = normalize(y, this.array);
+        z = normalize(z, this.array);
+      }
+      this.data.array[index + 0] = x;
+      this.data.array[index + 1] = y;
+      this.data.array[index + 2] = z;
+      return this;
+    }
+    setXYZW(index, x, y, z, w) {
+      index = index * this.data.stride + this.offset;
+      if (this.normalized) {
+        x = normalize(x, this.array);
+        y = normalize(y, this.array);
+        z = normalize(z, this.array);
+        w = normalize(w, this.array);
+      }
+      this.data.array[index + 0] = x;
+      this.data.array[index + 1] = y;
+      this.data.array[index + 2] = z;
+      this.data.array[index + 3] = w;
+      return this;
+    }
+    clone(data) {
+      if (data === void 0) {
+        console.log("THREE.InterleavedBufferAttribute.clone(): Cloning an interleaved buffer attribute will de-interleave buffer data.");
+        const array = [];
+        for (let i = 0; i < this.count; i++) {
+          const index = i * this.data.stride + this.offset;
+          for (let j = 0; j < this.itemSize; j++) {
+            array.push(this.data.array[index + j]);
+          }
+        }
+        return new BufferAttribute(new this.array.constructor(array), this.itemSize, this.normalized);
+      } else {
+        if (data.interleavedBuffers === void 0) {
+          data.interleavedBuffers = {};
+        }
+        if (data.interleavedBuffers[this.data.uuid] === void 0) {
+          data.interleavedBuffers[this.data.uuid] = this.data.clone(data);
+        }
+        return new _InterleavedBufferAttribute(data.interleavedBuffers[this.data.uuid], this.itemSize, this.offset, this.normalized);
+      }
+    }
+    toJSON(data) {
+      if (data === void 0) {
+        console.log("THREE.InterleavedBufferAttribute.toJSON(): Serializing an interleaved buffer attribute will de-interleave buffer data.");
+        const array = [];
+        for (let i = 0; i < this.count; i++) {
+          const index = i * this.data.stride + this.offset;
+          for (let j = 0; j < this.itemSize; j++) {
+            array.push(this.data.array[index + j]);
+          }
+        }
+        return {
+          itemSize: this.itemSize,
+          type: this.array.constructor.name,
+          array,
+          normalized: this.normalized
+        };
+      } else {
+        if (data.interleavedBuffers === void 0) {
+          data.interleavedBuffers = {};
+        }
+        if (data.interleavedBuffers[this.data.uuid] === void 0) {
+          data.interleavedBuffers[this.data.uuid] = this.data.toJSON(data);
+        }
+        return {
+          isInterleavedBufferAttribute: true,
+          itemSize: this.itemSize,
+          data: this.data.uuid,
+          offset: this.offset,
+          normalized: this.normalized
+        };
+      }
+    }
+  };
+  var SpriteMaterial = class extends Material {
+    static get type() {
+      return "SpriteMaterial";
+    }
+    constructor(parameters) {
+      super();
+      this.isSpriteMaterial = true;
+      this.color = new Color(16777215);
+      this.map = null;
+      this.alphaMap = null;
+      this.rotation = 0;
+      this.sizeAttenuation = true;
+      this.transparent = true;
+      this.fog = true;
+      this.setValues(parameters);
+    }
+    copy(source) {
+      super.copy(source);
+      this.color.copy(source.color);
+      this.map = source.map;
+      this.alphaMap = source.alphaMap;
+      this.rotation = source.rotation;
+      this.sizeAttenuation = source.sizeAttenuation;
+      this.fog = source.fog;
+      return this;
+    }
+  };
+  var _geometry;
+  var _intersectPoint = /* @__PURE__ */ new Vector3();
+  var _worldScale = /* @__PURE__ */ new Vector3();
+  var _mvPosition = /* @__PURE__ */ new Vector3();
+  var _alignedPosition = /* @__PURE__ */ new Vector2();
+  var _rotatedPosition = /* @__PURE__ */ new Vector2();
+  var _viewWorldMatrix = /* @__PURE__ */ new Matrix4();
+  var _vA = /* @__PURE__ */ new Vector3();
+  var _vB = /* @__PURE__ */ new Vector3();
+  var _vC = /* @__PURE__ */ new Vector3();
+  var _uvA = /* @__PURE__ */ new Vector2();
+  var _uvB = /* @__PURE__ */ new Vector2();
+  var _uvC = /* @__PURE__ */ new Vector2();
+  var Sprite = class extends Object3D {
+    constructor(material = new SpriteMaterial()) {
+      super();
+      this.isSprite = true;
+      this.type = "Sprite";
+      if (_geometry === void 0) {
+        _geometry = new BufferGeometry();
+        const float32Array = new Float32Array([
+          -0.5,
+          -0.5,
+          0,
+          0,
+          0,
+          0.5,
+          -0.5,
+          0,
+          1,
+          0,
+          0.5,
+          0.5,
+          0,
+          1,
+          1,
+          -0.5,
+          0.5,
+          0,
+          0,
+          1
+        ]);
+        const interleavedBuffer = new InterleavedBuffer(float32Array, 5);
+        _geometry.setIndex([0, 1, 2, 0, 2, 3]);
+        _geometry.setAttribute("position", new InterleavedBufferAttribute(interleavedBuffer, 3, 0, false));
+        _geometry.setAttribute("uv", new InterleavedBufferAttribute(interleavedBuffer, 2, 3, false));
+      }
+      this.geometry = _geometry;
+      this.material = material;
+      this.center = new Vector2(0.5, 0.5);
+    }
+    raycast(raycaster2, intersects) {
+      if (raycaster2.camera === null) {
+        console.error('THREE.Sprite: "Raycaster.camera" needs to be set in order to raycast against sprites.');
+      }
+      _worldScale.setFromMatrixScale(this.matrixWorld);
+      _viewWorldMatrix.copy(raycaster2.camera.matrixWorld);
+      this.modelViewMatrix.multiplyMatrices(raycaster2.camera.matrixWorldInverse, this.matrixWorld);
+      _mvPosition.setFromMatrixPosition(this.modelViewMatrix);
+      if (raycaster2.camera.isPerspectiveCamera && this.material.sizeAttenuation === false) {
+        _worldScale.multiplyScalar(-_mvPosition.z);
+      }
+      const rotation = this.material.rotation;
+      let sin, cos;
+      if (rotation !== 0) {
+        cos = Math.cos(rotation);
+        sin = Math.sin(rotation);
+      }
+      const center = this.center;
+      transformVertex(_vA.set(-0.5, -0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+      transformVertex(_vB.set(0.5, -0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+      transformVertex(_vC.set(0.5, 0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+      _uvA.set(0, 0);
+      _uvB.set(1, 0);
+      _uvC.set(1, 1);
+      let intersect2 = raycaster2.ray.intersectTriangle(_vA, _vB, _vC, false, _intersectPoint);
+      if (intersect2 === null) {
+        transformVertex(_vB.set(-0.5, 0.5, 0), _mvPosition, center, _worldScale, sin, cos);
+        _uvB.set(0, 1);
+        intersect2 = raycaster2.ray.intersectTriangle(_vA, _vC, _vB, false, _intersectPoint);
+        if (intersect2 === null) {
+          return;
+        }
+      }
+      const distance = raycaster2.ray.origin.distanceTo(_intersectPoint);
+      if (distance < raycaster2.near || distance > raycaster2.far) return;
+      intersects.push({
+        distance,
+        point: _intersectPoint.clone(),
+        uv: Triangle.getInterpolation(_intersectPoint, _vA, _vB, _vC, _uvA, _uvB, _uvC, new Vector2()),
+        face: null,
+        object: this
+      });
+    }
+    copy(source, recursive) {
+      super.copy(source, recursive);
+      if (source.center !== void 0) this.center.copy(source.center);
+      this.material = source.material;
+      return this;
+    }
+  };
+  function transformVertex(vertexPosition, mvPosition, center, scale, sin, cos) {
+    _alignedPosition.subVectors(vertexPosition, center).addScalar(0.5).multiply(scale);
+    if (sin !== void 0) {
+      _rotatedPosition.x = cos * _alignedPosition.x - sin * _alignedPosition.y;
+      _rotatedPosition.y = sin * _alignedPosition.x + cos * _alignedPosition.y;
+    } else {
+      _rotatedPosition.copy(_alignedPosition);
+    }
+    vertexPosition.copy(mvPosition);
+    vertexPosition.x += _rotatedPosition.x;
+    vertexPosition.y += _rotatedPosition.y;
+    vertexPosition.applyMatrix4(_viewWorldMatrix);
+  }
   var DataTexture = class extends Texture {
     constructor(data = null, width = 1, height = 1, format, type, mapping, wrapS, wrapT, magFilter = NearestFilter, minFilter = NearestFilter, anisotropy, colorSpace) {
       super(null, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy, colorSpace);
@@ -18324,7 +18730,7 @@ void main() {
         objectInfluences[i] = array[dataIndex + i];
       }
     }
-    raycast(raycaster, intersects) {
+    raycast(raycaster2, intersects) {
       const matrixWorld = this.matrixWorld;
       const raycastTimes = this.count;
       _mesh$1.geometry = this.geometry;
@@ -18333,17 +18739,17 @@ void main() {
       if (this.boundingSphere === null) this.computeBoundingSphere();
       _sphere$3.copy(this.boundingSphere);
       _sphere$3.applyMatrix4(matrixWorld);
-      if (raycaster.ray.intersectsSphere(_sphere$3) === false) return;
+      if (raycaster2.ray.intersectsSphere(_sphere$3) === false) return;
       for (let instanceId = 0; instanceId < raycastTimes; instanceId++) {
         this.getMatrixAt(instanceId, _instanceLocalMatrix);
         _instanceWorldMatrix.multiplyMatrices(matrixWorld, _instanceLocalMatrix);
         _mesh$1.matrixWorld = _instanceWorldMatrix;
-        _mesh$1.raycast(raycaster, _instanceIntersects);
+        _mesh$1.raycast(raycaster2, _instanceIntersects);
         for (let i = 0, l = _instanceIntersects.length; i < l; i++) {
-          const intersect = _instanceIntersects[i];
-          intersect.instanceId = instanceId;
-          intersect.object = this;
-          intersects.push(intersect);
+          const intersect2 = _instanceIntersects[i];
+          intersect2.instanceId = instanceId;
+          intersect2.object = this;
+          intersects.push(intersect2);
         }
         _instanceIntersects.length = 0;
       }
@@ -18449,18 +18855,18 @@ void main() {
       }
       return this;
     }
-    raycast(raycaster, intersects) {
+    raycast(raycaster2, intersects) {
       const geometry = this.geometry;
       const matrixWorld = this.matrixWorld;
-      const threshold = raycaster.params.Line.threshold;
+      const threshold = raycaster2.params.Line.threshold;
       const drawRange = geometry.drawRange;
       if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
       _sphere$1.copy(geometry.boundingSphere);
       _sphere$1.applyMatrix4(matrixWorld);
       _sphere$1.radius += threshold;
-      if (raycaster.ray.intersectsSphere(_sphere$1) === false) return;
+      if (raycaster2.ray.intersectsSphere(_sphere$1) === false) return;
       _inverseMatrix$1.copy(matrixWorld).invert();
-      _ray$1.copy(raycaster.ray).applyMatrix4(_inverseMatrix$1);
+      _ray$1.copy(raycaster2.ray).applyMatrix4(_inverseMatrix$1);
       const localThreshold = threshold / ((this.scale.x + this.scale.y + this.scale.z) / 3);
       const localThresholdSq = localThreshold * localThreshold;
       const step = this.isLineSegments ? 2 : 1;
@@ -18473,32 +18879,32 @@ void main() {
         for (let i = start, l = end - 1; i < l; i += step) {
           const a = index.getX(i);
           const b = index.getX(i + 1);
-          const intersect = checkIntersection(this, raycaster, _ray$1, localThresholdSq, a, b);
-          if (intersect) {
-            intersects.push(intersect);
+          const intersect2 = checkIntersection(this, raycaster2, _ray$1, localThresholdSq, a, b);
+          if (intersect2) {
+            intersects.push(intersect2);
           }
         }
         if (this.isLineLoop) {
           const a = index.getX(end - 1);
           const b = index.getX(start);
-          const intersect = checkIntersection(this, raycaster, _ray$1, localThresholdSq, a, b);
-          if (intersect) {
-            intersects.push(intersect);
+          const intersect2 = checkIntersection(this, raycaster2, _ray$1, localThresholdSq, a, b);
+          if (intersect2) {
+            intersects.push(intersect2);
           }
         }
       } else {
         const start = Math.max(0, drawRange.start);
         const end = Math.min(positionAttribute.count, drawRange.start + drawRange.count);
         for (let i = start, l = end - 1; i < l; i += step) {
-          const intersect = checkIntersection(this, raycaster, _ray$1, localThresholdSq, i, i + 1);
-          if (intersect) {
-            intersects.push(intersect);
+          const intersect2 = checkIntersection(this, raycaster2, _ray$1, localThresholdSq, i, i + 1);
+          if (intersect2) {
+            intersects.push(intersect2);
           }
         }
         if (this.isLineLoop) {
-          const intersect = checkIntersection(this, raycaster, _ray$1, localThresholdSq, end - 1, start);
-          if (intersect) {
-            intersects.push(intersect);
+          const intersect2 = checkIntersection(this, raycaster2, _ray$1, localThresholdSq, end - 1, start);
+          if (intersect2) {
+            intersects.push(intersect2);
           }
         }
       }
@@ -18521,15 +18927,15 @@ void main() {
       }
     }
   };
-  function checkIntersection(object, raycaster, ray, thresholdSq, a, b) {
+  function checkIntersection(object, raycaster2, ray, thresholdSq, a, b) {
     const positionAttribute = object.geometry.attributes.position;
     _vStart.fromBufferAttribute(positionAttribute, a);
     _vEnd.fromBufferAttribute(positionAttribute, b);
     const distSq = ray.distanceSqToSegment(_vStart, _vEnd, _intersectPointOnRay, _intersectPointOnSegment);
     if (distSq > thresholdSq) return;
     _intersectPointOnRay.applyMatrix4(object.matrixWorld);
-    const distance = raycaster.ray.origin.distanceTo(_intersectPointOnRay);
-    if (distance < raycaster.near || distance > raycaster.far) return;
+    const distance = raycaster2.ray.origin.distanceTo(_intersectPointOnRay);
+    if (distance < raycaster2.near || distance > raycaster2.far) return;
     return {
       distance,
       // What do we want? intersection point on the ray or on the segment??
@@ -18613,18 +19019,18 @@ void main() {
       this.geometry = source.geometry;
       return this;
     }
-    raycast(raycaster, intersects) {
+    raycast(raycaster2, intersects) {
       const geometry = this.geometry;
       const matrixWorld = this.matrixWorld;
-      const threshold = raycaster.params.Points.threshold;
+      const threshold = raycaster2.params.Points.threshold;
       const drawRange = geometry.drawRange;
       if (geometry.boundingSphere === null) geometry.computeBoundingSphere();
       _sphere.copy(geometry.boundingSphere);
       _sphere.applyMatrix4(matrixWorld);
       _sphere.radius += threshold;
-      if (raycaster.ray.intersectsSphere(_sphere) === false) return;
+      if (raycaster2.ray.intersectsSphere(_sphere) === false) return;
       _inverseMatrix.copy(matrixWorld).invert();
-      _ray.copy(raycaster.ray).applyMatrix4(_inverseMatrix);
+      _ray.copy(raycaster2.ray).applyMatrix4(_inverseMatrix);
       const localThreshold = threshold / ((this.scale.x + this.scale.y + this.scale.z) / 3);
       const localThresholdSq = localThreshold * localThreshold;
       const index = geometry.index;
@@ -18636,14 +19042,14 @@ void main() {
         for (let i = start, il = end; i < il; i++) {
           const a = index.getX(i);
           _position$2.fromBufferAttribute(positionAttribute, a);
-          testPoint(_position$2, a, localThresholdSq, matrixWorld, raycaster, intersects, this);
+          testPoint(_position$2, a, localThresholdSq, matrixWorld, raycaster2, intersects, this);
         }
       } else {
         const start = Math.max(0, drawRange.start);
         const end = Math.min(positionAttribute.count, drawRange.start + drawRange.count);
         for (let i = start, l = end; i < l; i++) {
           _position$2.fromBufferAttribute(positionAttribute, i);
-          testPoint(_position$2, i, localThresholdSq, matrixWorld, raycaster, intersects, this);
+          testPoint(_position$2, i, localThresholdSq, matrixWorld, raycaster2, intersects, this);
         }
       }
     }
@@ -18665,14 +19071,14 @@ void main() {
       }
     }
   };
-  function testPoint(point, index, localThresholdSq, matrixWorld, raycaster, intersects, object) {
+  function testPoint(point, index, localThresholdSq, matrixWorld, raycaster2, intersects, object) {
     const rayPointDistanceSq = _ray.distanceSqToPoint(point);
     if (rayPointDistanceSq < localThresholdSq) {
       const intersectPoint = new Vector3();
       _ray.closestPointToPoint(point, intersectPoint);
       intersectPoint.applyMatrix4(matrixWorld);
-      const distance = raycaster.ray.origin.distanceTo(intersectPoint);
-      if (distance < raycaster.near || distance > raycaster.far) return;
+      const distance = raycaster2.ray.origin.distanceTo(intersectPoint);
+      if (distance < raycaster2.near || distance > raycaster2.far) return;
       intersects.push({
         distance,
         distanceToRay: Math.sqrt(rayPointDistanceSq),
@@ -18685,6 +19091,13 @@ void main() {
       });
     }
   }
+  var CanvasTexture = class extends Texture {
+    constructor(canvas, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy) {
+      super(canvas, mapping, wrapS, wrapT, magFilter, minFilter, format, type, anisotropy);
+      this.isCanvasTexture = true;
+      this.needsUpdate = true;
+    }
+  };
   var Curve = class {
     constructor() {
       this.type = "Curve";
@@ -19819,6 +20232,53 @@ void main() {
     }
     static fromJSON(data) {
       return new _CapsuleGeometry(data.radius, data.length, data.capSegments, data.radialSegments);
+    }
+  };
+  var CircleGeometry = class _CircleGeometry extends BufferGeometry {
+    constructor(radius = 1, segments = 32, thetaStart = 0, thetaLength = Math.PI * 2) {
+      super();
+      this.type = "CircleGeometry";
+      this.parameters = {
+        radius,
+        segments,
+        thetaStart,
+        thetaLength
+      };
+      segments = Math.max(3, segments);
+      const indices = [];
+      const vertices = [];
+      const normals = [];
+      const uvs = [];
+      const vertex2 = new Vector3();
+      const uv = new Vector2();
+      vertices.push(0, 0, 0);
+      normals.push(0, 0, 1);
+      uvs.push(0.5, 0.5);
+      for (let s = 0, i = 3; s <= segments; s++, i += 3) {
+        const segment = thetaStart + s / segments * thetaLength;
+        vertex2.x = radius * Math.cos(segment);
+        vertex2.y = radius * Math.sin(segment);
+        vertices.push(vertex2.x, vertex2.y, vertex2.z);
+        normals.push(0, 0, 1);
+        uv.x = (vertices[i] / radius + 1) / 2;
+        uv.y = (vertices[i + 1] / radius + 1) / 2;
+        uvs.push(uv.x, uv.y);
+      }
+      for (let i = 1; i <= segments; i++) {
+        indices.push(i, i + 1, 0);
+      }
+      this.setIndex(indices);
+      this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+      this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+      this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    }
+    copy(source) {
+      super.copy(source);
+      this.parameters = Object.assign({}, source.parameters);
+      return this;
+    }
+    static fromJSON(data) {
+      return new _CircleGeometry(data.radius, data.segments, data.thetaStart, data.thetaLength);
     }
   };
   var PolyhedronGeometry = class _PolyhedronGeometry extends BufferGeometry {
@@ -21179,6 +21639,73 @@ void main() {
     ]
   ];
   var _controlInterpolantsResultBuffer = new Float32Array(1);
+  var _matrix = /* @__PURE__ */ new Matrix4();
+  var Raycaster = class {
+    constructor(origin, direction, near = 0, far = Infinity) {
+      this.ray = new Ray(origin, direction);
+      this.near = near;
+      this.far = far;
+      this.camera = null;
+      this.layers = new Layers();
+      this.params = {
+        Mesh: {},
+        Line: { threshold: 1 },
+        LOD: {},
+        Points: { threshold: 1 },
+        Sprite: {}
+      };
+    }
+    set(origin, direction) {
+      this.ray.set(origin, direction);
+    }
+    setFromCamera(coords, camera) {
+      if (camera.isPerspectiveCamera) {
+        this.ray.origin.setFromMatrixPosition(camera.matrixWorld);
+        this.ray.direction.set(coords.x, coords.y, 0.5).unproject(camera).sub(this.ray.origin).normalize();
+        this.camera = camera;
+      } else if (camera.isOrthographicCamera) {
+        this.ray.origin.set(coords.x, coords.y, (camera.near + camera.far) / (camera.near - camera.far)).unproject(camera);
+        this.ray.direction.set(0, 0, -1).transformDirection(camera.matrixWorld);
+        this.camera = camera;
+      } else {
+        console.error("THREE.Raycaster: Unsupported camera type: " + camera.type);
+      }
+    }
+    setFromXRController(controller) {
+      _matrix.identity().extractRotation(controller.matrixWorld);
+      this.ray.origin.setFromMatrixPosition(controller.matrixWorld);
+      this.ray.direction.set(0, 0, -1).applyMatrix4(_matrix);
+      return this;
+    }
+    intersectObject(object, recursive = true, intersects = []) {
+      intersect(object, this, intersects, recursive);
+      intersects.sort(ascSort);
+      return intersects;
+    }
+    intersectObjects(objects, recursive = true, intersects = []) {
+      for (let i = 0, l = objects.length; i < l; i++) {
+        intersect(objects[i], this, intersects, recursive);
+      }
+      intersects.sort(ascSort);
+      return intersects;
+    }
+  };
+  function ascSort(a, b) {
+    return a.distance - b.distance;
+  }
+  function intersect(object, raycaster2, intersects, recursive) {
+    let propagate = true;
+    if (object.layers.test(raycaster2.layers)) {
+      const result = object.raycast(raycaster2, intersects);
+      if (result === false) propagate = false;
+    }
+    if (propagate === true && recursive === true) {
+      const children = object.children;
+      for (let i = 0, l = children.length; i < l; i++) {
+        intersect(children[i], raycaster2, intersects, true);
+      }
+    }
+  }
   if (typeof __THREE_DEVTOOLS__ !== "undefined") {
     __THREE_DEVTOOLS__.dispatchEvent(new CustomEvent("register", { detail: {
       revision: REVISION
@@ -21257,10 +21784,10 @@ void main() {
       this.setAttribute("uv", new Float32BufferAttribute([0, 2, 0, 0, 2, 0], 2));
     }
   };
-  var _geometry = new FullscreenTriangleGeometry();
+  var _geometry2 = new FullscreenTriangleGeometry();
   var FullScreenQuad = class {
     constructor(material) {
-      this._mesh = new Mesh(_geometry, material);
+      this._mesh = new Mesh(_geometry2, material);
     }
     dispose() {
       this._mesh.geometry.dispose();
@@ -21994,7 +22521,23 @@ void main() {
     budgetMs: 20,
     recoverMs: 12,
     warmupFrames: 48,
-    bloom: { base: 0.58, bass: 1.1, radius: 0.42, threshold: 0.34 },
+    bloom: { base: 0.32, bass: 0.62, radius: 0.38, threshold: 0.58 },
+    dynamics: {
+      target: 0.46,
+      knee: 0.62,
+      ceiling: 1,
+      maxMakeup: 2.2,
+      peakAttack: 10,
+      peakRelease: 0.28,
+      maxBloom: 0.82,
+      maxEnergy: 1.05,
+      maxBrightness: 1.05,
+      maxParticleProduct: 280,
+      addCap: 1.15,
+      luminanceCeiling: 0.48,
+      luminanceRelease: 0.8,
+      luminanceFloorGain: 0.35
+    },
     waveform: { trails: 14, trailsLow: 5, halfWidth: 65e-4 },
     bars: { count: 64, height: 3.2, radius: 0.045 },
     scene: {
@@ -22012,11 +22555,18 @@ void main() {
       emission: { baseRate: 22, midToRate: 80 },
       expansion: { baseSpeed: 0.16, midToSpeed: 0.72 },
       size: { base: 9, mid: 11, treble: 9 },
-      brightness: { base: 0.55, mid: 0.7, treble: 1.15 },
+      brightness: { base: 0.32, mid: 0.38, treble: 0.42 },
       shimmer: { trebleSpeed: 28, trebleAmount: 0.32 },
       sparkle: { trebleChance: 0.62 },
       speedColor: { slow: 0.45, fast: 3.1 },
       form: { baseScale: 0.78, bassScale: 0.62 }
+    },
+    room: {
+      half: 4.2,
+      floorY: -1.35,
+      wallHeight: 2.55,
+      speakerHalf: 3.6,
+      cabinet: { w: 0.46, h: 0.78, d: 0.34 }
     },
     gradient: {
       radius: 17,
@@ -22030,8 +22580,8 @@ void main() {
       warp: 3.8,
       softening: 0.7,
       depthHue: 0.05,
-      energy: 1.35,
-      loudnessEnergy: 0.45,
+      energy: 0.62,
+      loudnessEnergy: 0.38,
       accentSpan: 0.3,
       cyan: [0.18, 0.9, 1],
       magenta: [1, 0.14, 0.8],
@@ -22065,13 +22615,39 @@ void main() {
   function clamp01(value) {
     return Math.max(0, Math.min(1, value));
   }
+  function softKnee(x, knee, ceiling) {
+    if (!(x > 0))
+      return 0;
+    if (!(ceiling > knee))
+      return Math.min(x, Math.max(ceiling, 0));
+    if (x <= knee)
+      return x;
+    const span = ceiling - knee;
+    const bent = knee + span * Math.tanh((x - knee) / span);
+    return Math.min(bent, ceiling - Math.max(Math.abs(ceiling) * 1e-6, 1e-6));
+  }
+  function makeDynamics() {
+    return { reference: VISUAL.dynamics.target * 0.45 };
+  }
+  function compress(input, state, dt) {
+    const cfg = VISUAL.dynamics;
+    const x = Math.max(0, input);
+    const rate = x > state.reference ? cfg.peakAttack : cfg.peakRelease;
+    state.reference += (x - state.reference) * (1 - Math.exp(-rate * Math.max(dt, 0)));
+    if (state.reference < 1e-4)
+      state.reference = 1e-4;
+    const makeup = Math.min(cfg.maxMakeup, cfg.target / state.reference);
+    const bent = softKnee(x * makeup, cfg.knee, cfg.ceiling);
+    return Math.min(bent, cfg.ceiling - 1e-4);
+  }
   var probe = document.createElement("canvas");
   if (!probe.getContext("webgl2") && !probe.getContext("webgl"))
     callNative("webglUnavailable");
   var renderer = new WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
   renderer.setClearColor(459796, 1);
-  renderer.toneMapping = NoToneMapping;
+  renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1;
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   document.body.appendChild(renderer.domElement);
   var ortho = new OrthographicCamera(-1.25, 1.25, 1.05, -1.05, 0.1, 10);
@@ -22184,6 +22760,215 @@ void main() {
     new MeshBasicMaterial({ color: VIOLET, wireframe: true, toneMapped: false })
   );
   worldScene.add(form);
+  var room = VISUAL.room;
+  var floorMaterial = new MeshBasicMaterial({
+    color: 1312792,
+    transparent: true,
+    opacity: 0.72,
+    toneMapped: false
+  });
+  var floor = new Mesh(new PlaneGeometry(room.half * 2, room.half * 2), floorMaterial);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = room.floorY;
+  worldScene.add(floor);
+  var wallMaterial = new MeshBasicMaterial({
+    color: 2363448,
+    transparent: true,
+    opacity: 0.34,
+    side: DoubleSide,
+    toneMapped: false
+  });
+  function addWall(width, height, x, y, z, yaw) {
+    const mesh = new Mesh(new PlaneGeometry(width, height), wallMaterial);
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = yaw;
+    worldScene.add(mesh);
+  }
+  var wallY = room.floorY + room.wallHeight * 0.5;
+  addWall(room.half * 2, room.wallHeight, 0, wallY, -room.half, 0);
+  addWall(room.half * 2, room.wallHeight, -room.half, wallY, 0, Math.PI / 2);
+  addWall(room.half * 2, room.wallHeight, room.half, wallY, 0, -Math.PI / 2);
+  var edgeMaterial = new LineBasicMaterial({ color: 8215807, transparent: true, opacity: 0.45, toneMapped: false });
+  function addEdge(ax, ay, az, bx, by, bz) {
+    const geometry = new BufferGeometry().setFromPoints([
+      new Vector3(ax, ay, az),
+      new Vector3(bx, by, bz)
+    ]);
+    worldScene.add(new Line(geometry, edgeMaterial));
+  }
+  var top = room.floorY + room.wallHeight;
+  addEdge(-room.half, room.floorY, -room.half, room.half, room.floorY, -room.half);
+  addEdge(-room.half, room.floorY, -room.half, -room.half, room.floorY, room.half);
+  addEdge(room.half, room.floorY, -room.half, room.half, room.floorY, room.half);
+  addEdge(-room.half, top, -room.half, room.half, top, -room.half);
+  addEdge(-room.half, top, -room.half, -room.half, top, room.half);
+  addEdge(room.half, top, -room.half, room.half, top, room.half);
+  addEdge(-room.half, room.floorY, -room.half, -room.half, top, -room.half);
+  addEdge(room.half, room.floorY, -room.half, room.half, top, -room.half);
+  addEdge(-room.half, room.floorY, room.half, -room.half, top, room.half);
+  addEdge(room.half, room.floorY, room.half, room.half, top, room.half);
+  var speakerRoot = new Group();
+  worldScene.add(speakerRoot);
+  var speakerById = /* @__PURE__ */ new Map();
+  var dragId = null;
+  var demoSpeakers = [];
+  function clampRoom(value) {
+    const limit = room.speakerHalf;
+    if (!Number.isFinite(value))
+      return 0;
+    return Math.max(-limit, Math.min(limit, value));
+  }
+  function makeLabel(text) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "rgba(8, 4, 18, 0.78)";
+    ctx.fillRect(8, 8, 240, 48);
+    ctx.font = "28px sans-serif";
+    ctx.fillStyle = "#d7f6ff";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const shown = String(text || "Output").slice(0, 18);
+    ctx.fillText(shown, 128, 32);
+    const texture = new CanvasTexture(canvas);
+    const sprite = new Sprite(new SpriteMaterial({ map: texture, transparent: true, toneMapped: false }));
+    sprite.position.y = room.cabinet.h + 0.28;
+    sprite.scale.set(1.35, 0.34, 1);
+    sprite.userData.texture = texture;
+    return sprite;
+  }
+  function disposeSpeaker(group) {
+    group.traverse((child) => {
+      if (child.geometry)
+        child.geometry.dispose();
+      const materials = child.material ? [].concat(child.material) : [];
+      for (const material of materials) {
+        if (material.map)
+          material.map.dispose();
+        material.dispose();
+      }
+      if (child.userData && child.userData.texture)
+        child.userData.texture.dispose();
+    });
+  }
+  function makeCabinet(id, label) {
+    const group = new Group();
+    group.userData.speakerId = id;
+    group.userData.label = label;
+    const body = new Mesh(
+      new BoxGeometry(room.cabinet.w, room.cabinet.h, room.cabinet.d),
+      new MeshBasicMaterial({ color: 1707042, toneMapped: false })
+    );
+    body.position.y = room.cabinet.h * 0.5;
+    const woofer = new Mesh(
+      new CircleGeometry(0.15, 18),
+      new MeshBasicMaterial({ color: 16722902, toneMapped: false })
+    );
+    woofer.position.set(0, room.cabinet.h * 0.3, room.cabinet.d * 0.51);
+    const tweeter = new Mesh(
+      new CircleGeometry(0.07, 16),
+      new MeshBasicMaterial({ color: 4059391, toneMapped: false })
+    );
+    tweeter.position.set(0, room.cabinet.h * 0.62, room.cabinet.d * 0.51);
+    group.add(body, woofer, tweeter, makeLabel(label));
+    return group;
+  }
+  function syncSpeakers(list) {
+    const next = /* @__PURE__ */ new Set();
+    for (const spot of list) {
+      if (!spot || typeof spot.id !== "string" || spot.id.length === 0)
+        continue;
+      next.add(spot.id);
+      let group = speakerById.get(spot.id);
+      const label = typeof spot.label === "string" && spot.label.length ? spot.label : spot.id;
+      if (!group) {
+        group = makeCabinet(spot.id, label);
+        speakerById.set(spot.id, group);
+        speakerRoot.add(group);
+      } else if (group.userData.label !== label) {
+        const old = group.children.find((child) => child.isSprite);
+        if (old) {
+          group.remove(old);
+          if (old.material) {
+            if (old.material.map)
+              old.material.map.dispose();
+            old.material.dispose();
+          }
+        }
+        group.add(makeLabel(label));
+        group.userData.label = label;
+      }
+      if (dragId !== spot.id) {
+        group.position.set(clampRoom(Number(spot.x)), room.floorY, clampRoom(Number(spot.z)));
+      }
+    }
+    for (const [id, group] of speakerById) {
+      if (next.has(id))
+        continue;
+      if (dragId === id)
+        dragId = null;
+      speakerRoot.remove(group);
+      disposeSpeaker(group);
+      speakerById.delete(id);
+    }
+  }
+  var raycaster = new Raycaster();
+  var pointerNdc = new Vector2();
+  var floorPlane = new Plane(new Vector3(0, 1, 0), -room.floorY);
+  var floorHit = new Vector3();
+  function pointerToNdc(event) {
+    const rect = renderer.domElement.getBoundingClientRect();
+    const width = rect.width || 1;
+    const height = rect.height || 1;
+    pointerNdc.x = (event.clientX - rect.left) / width * 2 - 1;
+    pointerNdc.y = -((event.clientY - rect.top) / height) * 2 + 1;
+  }
+  renderer.domElement.addEventListener("pointerdown", (event) => {
+    if (mode !== SCENE)
+      return;
+    pointerToNdc(event);
+    raycaster.setFromCamera(pointerNdc, perspective);
+    const hits = raycaster.intersectObjects(speakerRoot.children, true);
+    if (!hits.length)
+      return;
+    let object = hits[0].object;
+    while (object && !object.userData.speakerId)
+      object = object.parent;
+    if (!object || !object.userData.speakerId)
+      return;
+    dragId = object.userData.speakerId;
+    if (renderer.domElement.setPointerCapture)
+      renderer.domElement.setPointerCapture(event.pointerId);
+  });
+  renderer.domElement.addEventListener("pointermove", (event) => {
+    if (!dragId || mode !== SCENE)
+      return;
+    pointerToNdc(event);
+    raycaster.setFromCamera(pointerNdc, perspective);
+    if (!raycaster.ray.intersectPlane(floorPlane, floorHit))
+      return;
+    const group = speakerById.get(dragId);
+    if (!group)
+      return;
+    group.position.set(clampRoom(floorHit.x), room.floorY, clampRoom(floorHit.z));
+  });
+  function finishSpeakerDrag() {
+    if (!dragId)
+      return;
+    const group = speakerById.get(dragId);
+    const id = dragId;
+    dragId = null;
+    if (!group)
+      return;
+    const x = clampRoom(group.position.x);
+    const z = clampRoom(group.position.z);
+    group.position.set(x, room.floorY, z);
+    demoSpeakers = demoSpeakers.map((spot) => spot.id === id ? { ...spot, x, z } : spot);
+    callNative("placeSpeaker", [id, x, z]);
+  }
+  renderer.domElement.addEventListener("pointerup", finishSpeakerDrag);
+  renderer.domElement.addEventListener("pointercancel", finishSpeakerDrag);
   var gradient = VISUAL.gradient;
   var volumeMaterial = new ShaderMaterial({
     side: BackSide,
@@ -22205,6 +22990,7 @@ void main() {
       uDepthHue: { value: gradient.depthHue },
       uEnergy: { value: gradient.energy },
       uLoudnessEnergy: { value: gradient.loudnessEnergy },
+      uAddCap: { value: VISUAL.dynamics.addCap },
       uAccentSpan: { value: gradient.accentSpan },
       uSteps: { value: gradient.stepsHigh },
       uOctaves: { value: gradient.octavesHigh },
@@ -22237,6 +23023,7 @@ void main() {
     uniform float uDepthHue;
     uniform float uEnergy;
     uniform float uLoudnessEnergy;
+    uniform float uAddCap;
     uniform float uAccentSpan;
     uniform float uSteps;
     uniform float uOctaves;
@@ -22327,6 +23114,7 @@ void main() {
         color += sampleColor * 0.2 * remaining * energy;
         remaining *= 0.8;
       }
+      color = min(color, vec3(uAddCap));
       gl_FragColor = vec4(color, 1.0);
     }
   `
@@ -22356,6 +23144,11 @@ void main() {
   var mid = 0;
   var treble = 0;
   var level = 0;
+  var bandState = { bass: makeDynamics(), mid: makeDynamics(), treble: makeDynamics(), level: makeDynamics() };
+  var binState = Array.from({ length: barCount }, () => makeDynamics());
+  var lumaGain = 1;
+  var lumaTick = 0;
+  var probeLock = false;
   var accent = 0;
   var emitBudget = 0;
   var trailPhase = 0;
@@ -22498,7 +23291,10 @@ void main() {
     const shimmerAmp = treble * sceneCfg.shimmer.trebleAmount;
     const shimmerSpeed = sceneCfg.shimmer.trebleSpeed;
     const pointSize = sceneCfg.size.base + mid * sceneCfg.size.mid + treble * sceneCfg.size.treble;
-    const brightness = sceneCfg.brightness.base + mid * sceneCfg.brightness.mid + treble * sceneCfg.brightness.treble;
+    let brightness = sceneCfg.brightness.base + mid * sceneCfg.brightness.mid + treble * sceneCfg.brightness.treble;
+    brightness = Math.min(VISUAL.dynamics.maxBrightness, brightness);
+    brightness = Math.min(brightness, VISUAL.dynamics.maxParticleProduct / Math.max(1, activeParticles));
+    brightness *= lumaGain;
     let vertex2 = 0;
     for (let i = 0; i < particleCount; ++i) {
       const visible = i < activeParticles && alive[i];
@@ -22611,18 +23407,22 @@ void main() {
   }
   function applyFrame(dt) {
     const frame2 = latest;
-    const targetBass = frame2 && typeof frame2.bass === "number" ? frame2.bass : 0;
-    const targetMid = frame2 && typeof frame2.mid === "number" ? frame2.mid : 0;
-    const targetTreble = frame2 && typeof frame2.treble === "number" ? frame2.treble : 0;
-    const targetLevel = frame2 && typeof frame2.level === "number" ? frame2.level : 0;
-    bass = follow(bass, targetBass, dt, VISUAL.attack, VISUAL.release);
-    mid = follow(mid, targetMid, dt, VISUAL.attack, VISUAL.release);
-    treble = follow(treble, targetTreble, dt, VISUAL.attack, VISUAL.release);
-    level = follow(level, targetLevel, dt, VISUAL.attack, VISUAL.release);
+    const rawBass = frame2 && typeof frame2.bass === "number" ? frame2.bass : 0;
+    const rawMid = frame2 && typeof frame2.mid === "number" ? frame2.mid : 0;
+    const rawTreble = frame2 && typeof frame2.treble === "number" ? frame2.treble : 0;
+    const rawLevel = frame2 && typeof frame2.level === "number" ? frame2.level : 0;
+    bass = follow(bass, compress(rawBass, bandState.bass, dt), dt, VISUAL.attack, VISUAL.release);
+    mid = follow(mid, compress(rawMid, bandState.mid, dt), dt, VISUAL.attack, VISUAL.release);
+    treble = follow(treble, compress(rawTreble, bandState.treble, dt), dt, VISUAL.attack, VISUAL.release);
+    level = follow(level, compress(rawLevel, bandState.level, dt), dt, VISUAL.attack, VISUAL.release);
     accent += (level - accent) * (1 - Math.exp(-VISUAL.accentFollow * dt));
     accentColor.setHSL(lerp2(0.51, 0.89, clamp01(accent)), 0.86, 0.62);
     if (frame2 && (frame2.mode === WAVE || frame2.mode === BARS || frame2.mode === SCENE))
       mode = frame2.mode;
+    const nativeSpeakers = frame2 && Array.isArray(frame2.speakers) ? frame2.speakers : [];
+    const nativeIds = new Set(nativeSpeakers.map((spot) => spot && spot.id));
+    const incoming = demoSpeakers.length ? nativeSpeakers.concat(demoSpeakers.filter((spot) => spot && !nativeIds.has(spot.id))) : nativeSpeakers;
+    syncSpeakers(incoming);
     if (caption) {
       caption.textContent = MODE_LABEL[mode] || "Waveform";
       caption.classList.toggle("away", !!(frame2 && frame2.fullscreen));
@@ -22636,25 +23436,26 @@ void main() {
       drawnSerial = frameSerial;
     }
     const shownTrails = qualityHigh ? VISUAL.waveform.trails : VISUAL.waveform.trailsLow;
+    const waveDrive = (0.4 + 0.6 * level) * lumaGain;
     for (let i = 0; i < ribbons.length; ++i) {
       const samplesForRibbon = waveHistory[i];
-      const fade = i < shownTrails && samplesForRibbon ? Math.pow(0.72, i) : 0;
+      const fade = i < shownTrails && samplesForRibbon ? Math.pow(0.72, i) * waveDrive : 0;
       writeRibbon(ribbons[i], samplesForRibbon || [0, 0], VISUAL.waveform.halfWidth * (1 - i * 0.04), fade);
     }
     const bins = frame2 && Array.isArray(frame2.bins) ? frame2.bins : [];
-    const floor = -1.55;
+    const floor2 = -1.55;
     for (let i = 0; i < barCount; ++i) {
-      const target = clamp01(bins[i] || 0);
-      smoothBins[i] = follow(smoothBins[i], target, dt, VISUAL.attack, VISUAL.release);
+      const shaped = compress(Math.max(0, bins[i] || 0), binState[i], dt);
+      smoothBins[i] = follow(smoothBins[i], shaped, dt, VISUAL.attack, VISUAL.release);
       const height = 0.08 + smoothBins[i] * VISUAL.bars.height;
       const x = -6.4 + 12.8 * (i + 0.5) / barCount;
-      barDummy.position.set(x, floor + height * 0.5, 0);
+      barDummy.position.set(x, floor2 + height * 0.5, 0);
       barDummy.scale.set(1, height, 1);
       barDummy.updateMatrix();
       barMesh.setMatrixAt(i, barDummy.matrix);
       barColor.copy(VIOLET).lerp(accentColor, 0.35 + smoothBins[i] * 0.65);
       barMesh.setColorAt(i, barColor);
-      barDummy.position.set(x, floor - height * 0.22, 0);
+      barDummy.position.set(x, floor2 - height * 0.22, 0);
       barDummy.scale.set(1, height * 0.38, 1);
       barDummy.updateMatrix();
       barReflection.setMatrixAt(i, barDummy.matrix);
@@ -22680,9 +23481,14 @@ void main() {
     uniforms.uTime.value = simTime * gradient.timeSpeed * 8;
     uniforms.uAccent.value = accent;
     uniforms.uLevel.value = level;
-    bloomPass.strength = VISUAL.bloom.base + bass * VISUAL.bloom.bass;
+    uniforms.uAddCap.value = VISUAL.dynamics.addCap;
+    const energy = Math.min(VISUAL.dynamics.maxEnergy, (gradient.energy + gradient.loudnessEnergy * level) * lumaGain);
+    uniforms.uEnergy.value = energy;
+    uniforms.uLoudnessEnergy.value = 0;
+    bloomPass.strength = Math.min(VISUAL.dynamics.maxBloom, (VISUAL.bloom.base + bass * VISUAL.bloom.bass) * lumaGain);
     bloomPass.radius = VISUAL.bloom.radius;
     bloomPass.threshold = VISUAL.bloom.threshold;
+    renderer.toneMappingExposure = lumaGain;
   }
   function renderScene() {
     if (mode === BARS) {
@@ -22718,6 +23524,35 @@ void main() {
     }
     applyFrame(dt);
     renderScene();
+    if (lumaTick++ % 10 === 0)
+      lumaGain = guardLuminance(lumaGain, dt * 10);
+  }
+  function averageLuminance() {
+    const sample = averageLuminance.canvas || (averageLuminance.canvas = document.createElement("canvas"));
+    sample.width = 48;
+    sample.height = 27;
+    const ctx = sample.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(renderer.domElement, 0, 0, sample.width, sample.height);
+    const data = ctx.getImageData(0, 0, sample.width, sample.height).data;
+    let sum = 0;
+    const count = data.length / 4;
+    for (let i = 0; i < data.length; i += 4)
+      sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    return sum / (count * 255);
+  }
+  function guardLuminance(gain, dt) {
+    let measured = gain;
+    try {
+      measured = averageLuminance();
+    } catch (error) {
+      return gain;
+    }
+    const ceiling = VISUAL.dynamics.luminanceCeiling;
+    if (measured > ceiling && measured > 1e-4) {
+      return Math.max(VISUAL.dynamics.luminanceFloorGain, gain * (ceiling / measured));
+    }
+    const restored = gain + (1 - gain) * (1 - Math.exp(-VISUAL.dynamics.luminanceRelease * dt));
+    return Math.min(1, restored);
   }
   window.addEventListener("resize", resize);
   window.addEventListener("keydown", (event) => {
@@ -22727,9 +23562,44 @@ void main() {
     }
   }, true);
   window.wavisCapture = () => renderer.domElement.toDataURL("image/png");
+  window.wavisLuminance = () => {
+    try {
+      return averageLuminance();
+    } catch (error) {
+      return -1;
+    }
+  };
+  window.wavisProbe = (payload) => {
+    probeLock = true;
+    latest = payload;
+    frameSerial += 1;
+  };
+  window.wavisDemoSpeakers = (list) => {
+    demoSpeakers = Array.isArray(list) ? list : [];
+  };
+  window.wavisMoveSpeaker = (id, x, z) => {
+    const nx = clampRoom(Number(x));
+    const nz = clampRoom(Number(z));
+    let found = false;
+    demoSpeakers = demoSpeakers.map((spot) => {
+      if (!spot || spot.id !== id)
+        return spot;
+      found = true;
+      return { ...spot, x: nx, z: nz };
+    });
+    if (!found)
+      demoSpeakers.push({ id, label: id, x: nx, z: nz });
+    const group = speakerById.get(id);
+    if (group)
+      group.position.set(nx, room.floorY, nz);
+    callNative("placeSpeaker", [id, nx, nz]);
+    return nx + "," + nz;
+  };
   var backend = window.__JUCE__ && window.__JUCE__.backend;
   if (backend && typeof backend.addEventListener === "function") {
     backend.addEventListener("wavisFrame", (payload) => {
+      if (probeLock)
+        return;
       latest = payload;
       frameSerial += 1;
     });

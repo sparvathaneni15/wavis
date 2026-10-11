@@ -1,6 +1,8 @@
 #include "MainComponent.h"
 
 #include <algorithm>
+#include <cmath>
+#include <iostream>
 
 namespace
 {
@@ -13,6 +15,30 @@ juce::String statusLineFor(const AudioEngine::OutputChoice& output)
         text << "  ·  drift " << (output.driftMs >= 0.0f ? "+" : "") << juce::String(output.driftMs, 0) << " ms";
     }
     return text;
+}
+
+juce::String probeScript(const char* mode, double bass, double mid, double treble, double level, double lowBins, double highBins)
+{
+    juce::String bins = "[";
+    juce::String wave = "[";
+    for (int i = 0; i < 64; ++i)
+    {
+        if (i > 0)
+            bins << ",";
+        const double t = i / 63.0;
+        bins << juce::String(lowBins * (1.0 - t) + highBins * t, 3);
+    }
+    bins << "]";
+    for (int i = 0; i < 128; ++i)
+    {
+        if (i > 0)
+            wave << ",";
+        wave << juce::String(std::sin(i * 0.19) * std::min(1.0, level), 3);
+    }
+    wave << "]";
+    return "window.wavisProbe&&window.wavisProbe({mode:'" + juce::String(mode) + "',bass:" + juce::String(bass, 3)
+           + ",mid:" + juce::String(mid, 3) + ",treble:" + juce::String(treble, 3) + ",level:" + juce::String(level, 3)
+           + ",bins:" + bins + ",wave:" + wave + "})";
 }
 } // namespace
 
@@ -426,13 +452,121 @@ void MainComponent::timerCallback()
         engine.setVisualMode("radial");
         demoShots = 4;
     }
+    else if (demoShots == 4 && demoTicks >= 165 && !demoRoomShown)
+    {
+        visual.evaluate("window.wavisDemoSpeakers&&window.wavisDemoSpeakers(["
+                        "{id:'demo-left',label:'Left',x:-1.7,z:-0.25},"
+                        "{id:'demo-right',label:'Right',x:1.6,z:-0.25}])",
+                        {});
+        demoRoomShown = true;
+    }
+    else if (demoShots == 4 && demoTicks >= 185 && !demoRoomMoved)
+    {
+        visual.evaluate("window.wavisMoveSpeaker?window.wavisMoveSpeaker('demo-right',0.4,1.2):''",
+                        [](juce::String text)
+                        {
+                            std::cout << "WAVIS_SPEAKER " << text << "\n";
+                        });
+        demoRoomMoved = true;
+    }
     else if (demoShots == 4 && demoTicks >= 200)
     {
         visual.requestCapture(demoDir.getChildFile("wavis_scene.png"));
         demoShots = 5;
     }
-    else if ((demoShots >= 5 && demoTicks >= 230) || demoTicks >= std::max(demoSeconds * 15, 280))
+    else if (demoShots == 5 && demoTicks >= 245)
+    {
+        visual.setMode("radial");
+        modes.setSelectedId(3, juce::dontSendNotification);
+        visual.evaluate("window.wavisDemoSpeakers&&window.wavisDemoSpeakers([])", {});
+        visual.evaluate(probeScript("radial", 28.0, 16.0, 14.0, 1.0, 22.0, 18.0), {});
+        demoShots = 6;
+        lumaPhaseTick = demoTicks;
+    }
+    else if (demoShots == 6)
+    {
+        if (demoTicks >= lumaPhaseTick + 24 && ((demoTicks - lumaPhaseTick) % 8) == 0)
+            sampleLuma("loud");
+        if (demoTicks >= lumaPhaseTick + 64)
+        {
+            visual.requestCapture(demoDir.getChildFile("wavis_loud.png"));
+            demoShots = 7;
+            lumaPhaseTick = demoTicks;
+        }
+    }
+    else if (demoShots == 7)
+    {
+        const double t = (demoTicks - lumaPhaseTick) / 15.0;
+        const double hit = std::pow(std::max(0.0, std::sin(t * 2.4)), 6.0);
+        const double bass = 0.3 + 18.0 * hit;
+        const double mid = 0.2 + 2.2 * std::fabs(std::sin(t * 1.1));
+        const double treble = 0.05 + 1.6 * std::fabs(std::sin(t * 6.5));
+        const double level = 0.12 + 0.85 * hit;
+        visual.evaluate(probeScript("radial", bass, mid, treble, level, bass, treble), {});
+        if (((demoTicks - lumaPhaseTick) % 8) == 0)
+            sampleLuma("music");
+        if (demoTicks >= lumaPhaseTick + 75)
+        {
+            visual.requestCapture(demoDir.getChildFile("wavis_music.png"));
+            demoShots = 8;
+            lumaPhaseTick = demoTicks;
+        }
+    }
+    else if ((demoShots >= 8 && demoTicks >= lumaPhaseTick + 10) || demoTicks >= std::max(demoSeconds * 15, 640))
+    {
+        printLumaSummary();
         juce::JUCEApplication::getInstance()->systemRequestedQuit();
+    }
+}
+
+void MainComponent::sampleLuma(const char* phase)
+{
+    if (lumaBusy)
+        return;
+    lumaBusy = true;
+    const std::string label = phase;
+    visual.evaluate("window.wavisLuminance ? String(window.wavisLuminance()) : ''",
+                    [this, label](juce::String text)
+                    {
+                        lumaBusy = false;
+                        if (text.isEmpty())
+                            return;
+                        const double value = text.getDoubleValue();
+                        if (value < 0.0)
+                            return;
+                        lumaSamples.push_back({ label, value });
+                        std::cout << "WAVIS_LUMA " << label << " " << value << "\n";
+                    });
+}
+
+void MainComponent::printLumaSummary()
+{
+    const auto range = [this](const std::string& phase, double& lo, double& hi, int& count)
+    {
+        lo = 1.0e9;
+        hi = -1.0;
+        count = 0;
+        for (const auto& sample : lumaSamples)
+        {
+            if (sample.phase != phase)
+                continue;
+            lo = std::min(lo, sample.value);
+            hi = std::max(hi, sample.value);
+            ++count;
+        }
+    };
+
+    double loudLo = 0.0, loudHi = 0.0, musicLo = 0.0, musicHi = 0.0;
+    int loudCount = 0, musicCount = 0;
+    range("loud", loudLo, loudHi, loudCount);
+    range("music", musicLo, musicHi, musicCount);
+    constexpr double ceiling = 0.62;
+    const bool loudOk = loudCount > 0 && loudHi < ceiling;
+    const bool musicOk = musicCount > 1 && musicHi < ceiling && (musicHi - musicLo) > 0.015;
+    std::cout << "WAVIS_LUMA_SUMMARY loud n=" << loudCount << " min=" << loudLo << " max=" << loudHi
+              << " music n=" << musicCount << " min=" << musicLo << " max=" << musicHi
+              << " ceiling=" << ceiling << "\n";
+    std::cout << (loudOk && musicOk ? "WAVIS_LUMA_OK\n" : "WAVIS_LUMA_FAIL\n");
 }
 
 std::vector<MonitorDesc> MainComponent::collectMonitors() const

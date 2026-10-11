@@ -2,6 +2,8 @@
 
 #include "RoutingModel.h"
 
+#include <algorithm>
+#include <cmath>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -15,6 +17,35 @@ struct OutputSetting
     bool selected = true;
 };
 
+struct SpeakerSpot
+{
+    std::string id;
+    float x = 0.0f;
+    float z = 0.0f;
+};
+
+// Speakers stay on the floor of the 3D room. Coordinates are metres in the page's XZ plane.
+inline constexpr float kSpeakerFloorHalf = 3.6f;
+
+inline float clampSpeakerCoord(float value) noexcept
+{
+    if (!std::isfinite(value))
+        return 0.0f;
+    return std::clamp(value, -kSpeakerFloorHalf, kSpeakerFloorHalf);
+}
+
+// Unsaved speakers start on an arc that opens toward the camera, inside the floor.
+inline void defaultSpeakerArc(int index, int count, float& x, float& z) noexcept
+{
+    const int total = std::max(1, count);
+    const int slot = std::clamp(index, 0, total - 1);
+    const float span = total == 1 ? 0.0f : 1.5f;
+    const float along = total == 1 ? 0.5f : static_cast<float>(slot) / static_cast<float>(total - 1);
+    const float angle = -span * 0.5f + span * along;
+    x = clampSpeakerCoord(std::sin(angle) * 2.15f);
+    z = clampSpeakerCoord(-0.35f - std::cos(angle) * 0.95f);
+}
+
 struct AppSettings
 {
     int version = 1;
@@ -23,6 +54,7 @@ struct AppSettings
     std::string visual = "oscilloscope";
     std::string filePath;
     std::vector<OutputSetting> outputs;
+    std::vector<SpeakerSpot> speakers;
 };
 
 inline bool isVisualModeName(std::string_view name) noexcept
@@ -60,6 +92,21 @@ inline std::string serialiseSettings(const AppSettings& settings)
         seen.push_back(route.id);
         out << "route=" << sanitiseField(route.id) << "\t" << clampGain(route.gain) << "\t" << (route.muted ? 1 : 0)
             << "\t" << (route.selected ? 1 : 0) << "\n";
+    }
+
+    seen.clear();
+    for (const auto& spot : settings.speakers)
+    {
+        if (spot.id.empty())
+            continue;
+        bool duplicate = false;
+        for (const auto& id : seen)
+            duplicate = duplicate || id == spot.id;
+        if (duplicate)
+            continue;
+        seen.push_back(spot.id);
+        out << "speaker=" << sanitiseField(spot.id) << "\t" << clampSpeakerCoord(spot.x) << "\t"
+            << clampSpeakerCoord(spot.z) << "\n";
     }
 
     return out.str();
@@ -132,6 +179,52 @@ inline std::optional<AppSettings> parseSettings(const std::string& text)
             route.muted = fields[2] == "1";
             route.selected = fields[3] != "0";
             settings.outputs.push_back(route);
+        }
+        else if (line.rfind("speaker=", 0) == 0)
+        {
+            auto body = line.substr(8);
+            std::string fields[3];
+            int index = 0;
+            std::string current;
+            for (char c : body)
+            {
+                if (c == '\t' && index < 2)
+                {
+                    fields[index++] = current;
+                    current.clear();
+                }
+                else
+                    current.push_back(c);
+            }
+            fields[index] = current;
+            if (fields[0].empty())
+                continue;
+
+            bool duplicate = false;
+            for (const auto& existing : settings.speakers)
+                duplicate = duplicate || existing.id == fields[0];
+            if (duplicate)
+                continue;
+
+            SpeakerSpot spot;
+            spot.id = fields[0];
+            try
+            {
+                spot.x = fields[1].empty() ? 0.0f : clampSpeakerCoord(std::stof(fields[1]));
+            }
+            catch (...)
+            {
+                spot.x = 0.0f;
+            }
+            try
+            {
+                spot.z = fields[2].empty() ? 0.0f : clampSpeakerCoord(std::stof(fields[2]));
+            }
+            catch (...)
+            {
+                spot.z = 0.0f;
+            }
+            settings.speakers.push_back(spot);
         }
     }
 

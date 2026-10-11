@@ -96,6 +96,17 @@ juce::WebBrowserComponent::Options WebStage::makeOptions(WebStage& owner)
                                                if (owner.webglFailed)
                                                    owner.webglFailed();
                                                completion({});
+                                           })
+                       .withNativeFunction("placeSpeaker", [&owner](const juce::Array<juce::var>& args, auto completion)
+                                           {
+                                               if (args.size() >= 3)
+                                               {
+                                                   const auto id = args[0].toString().toStdString();
+                                                   const float x = static_cast<float>(static_cast<double>(args[1]));
+                                                   const float z = static_cast<float>(static_cast<double>(args[2]));
+                                                   owner.audio.setSpeakerPosition(id, x, z);
+                                               }
+                                               completion({});
                                            });
 
 #if JUCE_WINDOWS && JUCE_USE_WIN_WEBVIEW2
@@ -239,11 +250,11 @@ void WebStage::emitFrame()
         fft->performFrequencyOnlyForwardTransform(fftBuffer.data(), true);
         reduceLogBins(fftBuffer.data(), fftSize / 2, bins, kSpectrumBins);
         for (float& bin : bins)
-            bin = std::clamp(bin * 12.0f, 0.0f, 1.0f);
+            bin = std::max(0.0f, bin * 12.0f);
     }
 
     const auto bands = (fftSize > 0 && available >= fftSize)
-                           ? measureBands(fftBuffer.data(), fftSize / 2, audio.getVisualSampleRate(), fftSize)
+                           ? measureBandsOpen(fftBuffer.data(), fftSize / 2, audio.getVisualSampleRate(), fftSize)
                            : SpectralBands {};
 
     auto* object = new juce::DynamicObject();
@@ -265,8 +276,44 @@ void WebStage::emitFrame()
     object->setProperty("treble", static_cast<double>(bands.treble));
     object->setProperty("fullscreen", pictureFullscreen);
 
+    juce::Array<juce::var> speakers;
+    for (const auto& spot : audio.getSpeakers())
+    {
+        auto* item = new juce::DynamicObject();
+        item->setProperty("id", juce::String(spot.id));
+        item->setProperty("label", juce::String(spot.label));
+        item->setProperty("x", static_cast<double>(spot.x));
+        item->setProperty("z", static_cast<double>(spot.z));
+        speakers.add(juce::var(item));
+    }
+    object->setProperty("speakers", speakers);
+
     browser->emitEventIfBrowserIsVisible("wavisFrame", juce::var(object));
     framesSent.store(framesSent.load() + 1);
+}
+
+void WebStage::evaluate(const juce::String& script, std::function<void(juce::String)> done)
+{
+    if (browser == nullptr || !pageReady)
+    {
+        if (done)
+            done({});
+        return;
+    }
+
+    juce::Component::SafePointer<WebStage> safe(this);
+    browser->evaluateJavascript(script, [safe, done = std::move(done)](juce::WebBrowserComponent::EvaluationResult result)
+                                {
+                                    if (safe == nullptr || !done)
+                                        return;
+                                    if (result.getError() != nullptr)
+                                    {
+                                        done({});
+                                        return;
+                                    }
+                                    const auto* value = result.getResult();
+                                    done(value != nullptr ? value->toString() : juce::String());
+                                });
 }
 
 void WebStage::requestCapture(const juce::File& file)

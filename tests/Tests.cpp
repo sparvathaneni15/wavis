@@ -1,6 +1,7 @@
 #include "core/DeviceList.h"
 #include "core/DisplayLayout.h"
 #include "core/DriftCorrector.h"
+#include "core/VisualDynamics.h"
 #include "core/VisualFrame.h"
 #include "core/OutputFanout.h"
 #include "core/RoutingModel.h"
@@ -330,9 +331,9 @@ public:
         expect(isSystemAudioName("ALSA", "Monitor of Built-in Audio Analog Stereo"));
         expect(isPulseMonitor("alsa_output.pci-0000_00_1f.3.analog-stereo.monitor", "Built-in Audio"));
         expect(labelPulseSource("alsa_output.pci.monitor", "Built-in Audio Analog Stereo")
-                   .find("System/Browser audio â€” Monitor of ") == 0);
+                   .find("System/Browser audio — Monitor of ") == 0);
         expect(isSystemAudioName("WASAPI", "Speakers (loopback)"));
-        expect(systemAudioLabel("Speakers (loopback)").find("System/Browser audio â€” ") == 0);
+        expect(systemAudioLabel("Speakers (loopback)").find("System/Browser audio — ") == 0);
         expect(isSystemAudioName("CoreAudio", "BlackHole 2ch"));
         expect(isSystemAudioName("CoreAudio", "Loopback Audio"));
         expect(isSystemAudioName("CoreAudio", "Soundflower (2ch)"));
@@ -348,12 +349,12 @@ public:
         booth.label = "Headphones";
         booth.deviceName = "Headphones";
 
-        auto hits = findFeedbackLoops("System/Browser audio â€” Monitor of Built-in Audio Analog Stereo", true, { speakers, booth });
+        auto hits = findFeedbackLoops("System/Browser audio — Monitor of Built-in Audio Analog Stereo", true, { speakers, booth });
         expectEquals(static_cast<int>(hits.size()), 1);
         expect(hits[0].outputId == speakers.id);
 
         speakers.muted = true;
-        hits = findFeedbackLoops("System/Browser audio â€” Monitor of Built-in Audio Analog Stereo", true, { speakers, booth });
+        hits = findFeedbackLoops("System/Browser audio — Monitor of Built-in Audio Analog Stereo", true, { speakers, booth });
         expect(hits.empty());
 
         speakers.muted = false;
@@ -363,13 +364,13 @@ public:
         OutputRoute loop = selectedRoute("WASAPI::speakers", true, LinkState::live);
         loop.label = "Speakers (Realtek)";
         loop.deviceName = "Speakers (Realtek)";
-        hits = findFeedbackLoops("System/Browser audio â€” Speakers (Realtek) (loopback)", true, { loop });
+        hits = findFeedbackLoops("System/Browser audio — Speakers (Realtek) (loopback)", true, { loop });
         expectEquals(static_cast<int>(hits.size()), 1);
 
         OutputRoute hole = selectedRoute("CoreAudio::BlackHole 2ch", true, LinkState::live);
         hole.label = "BlackHole 2ch";
         hole.deviceName = "BlackHole 2ch";
-        hits = findFeedbackLoops("System/Browser audio â€” BlackHole 2ch", true, { hole });
+        hits = findFeedbackLoops("System/Browser audio — BlackHole 2ch", true, { hole });
         expectEquals(static_cast<int>(hits.size()), 1);
 
         beginTest("macOS explains the missing native loopback only when none is present");
@@ -435,6 +436,52 @@ public:
         expect(!routes[1].available);
         expect(routes[1].state == LinkState::disconnected);
         expect(routes[1].selected);
+        expectEquals(static_cast<int>(loaded->speakers.size()), 0);
+
+        beginTest("speaker spots round trip, clamp onto the floor, and default to an arc");
+        AppSettings withSpeakers = settings;
+        withSpeakers.speakers.push_back({ "ALSA::hw:0,0", 1.25f, -0.5f });
+        withSpeakers.speakers.push_back({ "ALSA::hw:0,0", 9.0f, 0.0f });
+        withSpeakers.speakers.push_back({ "ALSA::hw:2,0", 99.0f, -99.0f });
+        const auto speakerText = serialiseSettings(withSpeakers);
+        const auto speakerLoaded = parseSettings(speakerText);
+        expect(speakerLoaded.has_value());
+        if (speakerLoaded.has_value())
+        {
+            expectEquals(static_cast<int>(speakerLoaded->speakers.size()), 2);
+            expect(speakerLoaded->speakers[0].id == "ALSA::hw:0,0");
+            expect(near(speakerLoaded->speakers[0].x, 1.25f));
+            expect(near(speakerLoaded->speakers[0].z, -0.5f));
+            expect(near(speakerLoaded->speakers[1].x, kSpeakerFloorHalf));
+            expect(near(speakerLoaded->speakers[1].z, -kSpeakerFloorHalf));
+        }
+
+        const auto junk = parseSettings("WAVIS1\nspeaker=booth\tnope\t2\nspeaker=\t1\t1\nroute=still-here\t0.5\t0\t1\n");
+        expect(junk.has_value());
+        if (junk.has_value())
+        {
+            expectEquals(static_cast<int>(junk->speakers.size()), 1);
+            expect(junk->speakers[0].id == "booth");
+            expect(near(junk->speakers[0].x, 0.0f));
+            expect(near(junk->speakers[0].z, 2.0f));
+            expectEquals(static_cast<int>(junk->outputs.size()), 1);
+        }
+
+        expect(near(clampSpeakerCoord(9.0f), kSpeakerFloorHalf));
+        expect(near(clampSpeakerCoord(-9.0f), -kSpeakerFloorHalf));
+        expect(near(clampSpeakerCoord(std::nanf("")), 0.0f));
+
+        float ax = 0.0f, az = 0.0f, bx = 0.0f, bz = 0.0f, cx = 0.0f, cz = 0.0f;
+        defaultSpeakerArc(0, 1, ax, az);
+        defaultSpeakerArc(0, 3, bx, bz);
+        defaultSpeakerArc(2, 3, cx, cz);
+        expect(near(ax, 0.0f));
+        expect(std::abs(az) <= kSpeakerFloorHalf);
+        expect(bx < -0.5f);
+        expect(cx > 0.5f);
+        expect(std::abs(bx) <= kSpeakerFloorHalf && std::abs(bz) <= kSpeakerFloorHalf);
+        expect(std::abs(cx) <= kSpeakerFloorHalf && std::abs(cz) <= kSpeakerFloorHalf);
+        expect(std::abs(bx - cx) > 0.5f);
     }
 };
 
@@ -447,7 +494,7 @@ public:
     {
         beginTest("monitor labels name the display and the fullscreen toggle");
         expect(monitorId(0, 0, 1920, 1080) == "0,0,1920,1080");
-        expect(monitorLabel(2, 1920, 1080, false) == "Display 2 â€” 1920Ã—1080");
+        expect(monitorLabel(2, 1920, 1080, false) == "Display 2 — 1920×1080");
         expect(monitorLabel(1, 2560, 1440, true).find("(main)") != std::string::npos);
         expect(fullscreenToggleLabel(3) == "Fullscreen on display 3");
 
@@ -515,6 +562,50 @@ public:
     }
 };
 
+class VisualDynamicsTest : public juce::UnitTest
+{
+public:
+    VisualDynamicsTest() : juce::UnitTest("Visual compressor", "Wavis") {}
+
+    void runTest() override
+    {
+        beginTest("the soft knee is linear below the knee and never reaches the ceiling");
+        expectEquals(visualSoftKnee(0.0f, 0.62f, 1.0f), 0.0f);
+        expect(std::abs(visualSoftKnee(0.4f, 0.62f, 1.0f) - 0.4f) < 1.0e-5f);
+        expect(visualSoftKnee(0.62f, 0.62f, 1.0f) <= 0.62f + 1.0e-5f);
+        const float huge = visualSoftKnee(1.0e6f, 0.62f, 1.0f);
+        expect(huge > 0.9f);
+        expect(huge < 1.0f);
+        expect(visualSoftKnee(2.0f, 0.62f, 1.0f) > visualSoftKnee(1.0f, 0.62f, 1.0f));
+
+        beginTest("a sustained loud signal settles near the target and a hit still reads above it");
+        VisualDynamics loud;
+        float settled = 0.0f;
+        for (int i = 0; i < 480; ++i)
+            settled = visualCompress(30.0f, loud, 1.0f / 60.0f);
+        expect(std::abs(settled - loud.target) < 0.04f);
+
+        const float hit = visualCompress(180.0f, loud, 1.0f / 60.0f);
+        expect(hit > settled + 0.2f);
+        expect(hit < loud.ceiling);
+
+        beginTest("quiet material stays below a loud passage and the reference falls slowly");
+        VisualDynamics quiet;
+        float quietOut = 0.0f;
+        for (int i = 0; i < 480; ++i)
+            quietOut = visualCompress(0.04f, quiet, 1.0f / 60.0f);
+        expect(quietOut < 0.25f);
+        expect(quietOut < settled);
+
+        const float referenceAfterLoud = loud.reference;
+        for (int i = 0; i < 12; ++i)
+            visualCompress(0.0f, loud, 1.0f / 60.0f);
+        expect(loud.reference > referenceAfterLoud * 0.7f);
+        expect(loud.reference < referenceAfterLoud);
+    }
+};
+
+static VisualDynamicsTest visualDynamicsTest;
 static RingBufferTest ringBufferTest;
 static DriftTest driftTest;
 static FanoutTest fanoutTest;

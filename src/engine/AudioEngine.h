@@ -64,6 +64,17 @@ public:
     void setOutputGain(const std::string& id, float gain);
     void setOutputMuted(const std::string& id, bool muted);
 
+    struct SpeakerChoice
+    {
+        std::string id;
+        std::string label;
+        float x = 0.0f;
+        float z = 0.0f;
+    };
+
+    std::vector<SpeakerChoice> getSpeakers() const;
+    void setSpeakerPosition(const std::string& id, float x, float z);
+
     void setFile(const juce::File& file);
     juce::String getFileName() const;
 
@@ -148,6 +159,7 @@ private:
     bool scanRequested = false;
     int scanTicks = 0;
     std::vector<OutputSetting> savedOutputs;
+    std::map<std::string, std::pair<float, float>> speakerSpots;
 
     juce::ListenerList<Listener> listeners;
     std::shared_ptr<std::atomic<bool>> alive = std::make_shared<std::atomic<bool>>(true);

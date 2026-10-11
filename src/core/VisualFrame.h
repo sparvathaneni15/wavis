@@ -70,6 +70,31 @@ inline SpectralBands measureBands(const float* magnitudes, int count, double sam
     return bands;
 }
 
+// Same bands without the 0..1 ceiling. The page's compressor is what bounds them.
+inline float peakInHzRangeOpen(const float* magnitudes, int count, double sampleRate, int fftSize, double lowHz, double highHz)
+{
+    if (magnitudes == nullptr || count <= 0 || sampleRate <= 0.0 || fftSize <= 0 || highHz <= lowHz)
+        return 0.0f;
+
+    const double binHz = sampleRate / static_cast<double>(fftSize);
+    int from = std::clamp(static_cast<int>(std::floor(lowHz / binHz)), 0, count);
+    int to = std::clamp(static_cast<int>(std::ceil(highHz / binHz)), from, count);
+    float peak = 0.0f;
+    for (int i = from; i < to; ++i)
+        peak = std::max(peak, magnitudes[i]);
+    return std::max(0.0f, peak * 12.0f);
+}
+
+inline SpectralBands measureBandsOpen(const float* magnitudes, int count, double sampleRate, int fftSize)
+{
+    const double nyquist = sampleRate * 0.5;
+    SpectralBands bands;
+    bands.bass = peakInHzRangeOpen(magnitudes, count, sampleRate, fftSize, 20.0, 150.0);
+    bands.mid = peakInHzRangeOpen(magnitudes, count, sampleRate, fftSize, 150.0, 2000.0);
+    bands.treble = peakInHzRangeOpen(magnitudes, count, sampleRate, fftSize, 2000.0, std::min(16000.0, nyquist));
+    return bands;
+}
+
 // Logarithmic grouping of an FFT magnitude array. Earlier bins are narrower.
 inline void reduceLogBins(const float* magnitudes, int count, float* bins, int binCount)
 {

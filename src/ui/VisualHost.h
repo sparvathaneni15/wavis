@@ -19,6 +19,7 @@ public:
     void setMode(const std::string& mode);
     void setPictureFullscreen(bool enabled);
     void requestCapture(const juce::File& file);
+    void evaluate(const juce::String& script, std::function<void(juce::String)> done);
     int getFramesPerSecond() const noexcept;
     bool hasLiveFrames() const noexcept;
     bool isWebView() const noexcept { return web != nullptr; }

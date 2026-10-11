@@ -161,6 +161,8 @@ AudioEngine::AudioEngine()
             visualMode = parsed->visual;
             filePath = parsed->filePath;
             savedOutputs = parsed->outputs;
+            for (const auto& spot : parsed->speakers)
+                speakerSpots[spot.id] = { spot.x, spot.z };
         }
     }
 
@@ -316,6 +318,43 @@ std::vector<AudioEngine::OutputChoice> AudioEngine::getOutputs() const
         choices.push_back(choice);
     }
     return choices;
+}
+
+std::vector<AudioEngine::SpeakerChoice> AudioEngine::getSpeakers() const
+{
+    std::vector<SpeakerChoice> spots;
+    for (const auto& choice : getOutputs())
+    {
+        if (!choice.selected)
+            continue;
+        SpeakerChoice spot;
+        spot.id = choice.id;
+        spot.label = choice.label;
+        spots.push_back(std::move(spot));
+    }
+
+    const int count = static_cast<int>(spots.size());
+    for (int i = 0; i < count; ++i)
+    {
+        auto& spot = spots[static_cast<size_t>(i)];
+        const auto found = speakerSpots.find(spot.id);
+        if (found != speakerSpots.end())
+        {
+            spot.x = clampSpeakerCoord(found->second.first);
+            spot.z = clampSpeakerCoord(found->second.second);
+        }
+        else
+            defaultSpeakerArc(i, count, spot.x, spot.z);
+    }
+    return spots;
+}
+
+void AudioEngine::setSpeakerPosition(const std::string& id, float x, float z)
+{
+    if (id.empty())
+        return;
+    speakerSpots[id] = { clampSpeakerCoord(x), clampSpeakerCoord(z) };
+    saveSettings();
 }
 
 void AudioEngine::setOutputSelected(const std::string& id, bool selected)
@@ -943,6 +982,14 @@ void AudioEngine::saveSettings()
         setting.muted = route.muted;
         setting.selected = true;
         settings.outputs.push_back(setting);
+    }
+    for (const auto& [id, position] : speakerSpots)
+    {
+        SpeakerSpot spot;
+        spot.id = id;
+        spot.x = position.first;
+        spot.z = position.second;
+        settings.speakers.push_back(spot);
     }
 
     if (auto* file = properties.getUserSettings())

@@ -17,7 +17,23 @@ const VISUAL = {
   budgetMs: 20,
   recoverMs: 12,
   warmupFrames: 48,
-  bloom: { base: 0.58, bass: 1.1, radius: 0.42, threshold: 0.34 },
+  bloom: { base: 0.32, bass: 0.62, radius: 0.38, threshold: 0.58 },
+  dynamics: {
+    target: 0.46,
+    knee: 0.62,
+    ceiling: 1,
+    maxMakeup: 2.2,
+    peakAttack: 10,
+    peakRelease: 0.28,
+    maxBloom: 0.82,
+    maxEnergy: 1.05,
+    maxBrightness: 1.05,
+    maxParticleProduct: 280,
+    addCap: 1.15,
+    luminanceCeiling: 0.48,
+    luminanceRelease: 0.8,
+    luminanceFloorGain: 0.35,
+  },
   waveform: { trails: 14, trailsLow: 5, halfWidth: 0.0065 },
   bars: { count: 64, height: 3.2, radius: 0.045 },
   scene: {
@@ -35,11 +51,18 @@ const VISUAL = {
     emission: { baseRate: 22, midToRate: 80 },
     expansion: { baseSpeed: 0.16, midToSpeed: 0.72 },
     size: { base: 9, mid: 11, treble: 9 },
-    brightness: { base: 0.55, mid: 0.7, treble: 1.15 },
+    brightness: { base: 0.32, mid: 0.38, treble: 0.42 },
     shimmer: { trebleSpeed: 28, trebleAmount: 0.32 },
     sparkle: { trebleChance: 0.62 },
     speedColor: { slow: 0.45, fast: 3.1 },
     form: { baseScale: 0.78, bassScale: 0.62 },
+  },
+  room: {
+    half: 4.2,
+    floorY: -1.35,
+    wallHeight: 2.55,
+    speakerHalf: 3.6,
+    cabinet: { w: 0.46, h: 0.78, d: 0.34 },
   },
   gradient: {
     radius: 17,
@@ -53,8 +76,8 @@ const VISUAL = {
     warp: 3.8,
     softening: 0.7,
     depthHue: 0.05,
-    energy: 1.35,
-    loudnessEnergy: 0.45,
+    energy: 0.62,
+    loudnessEnergy: 0.38,
     accentSpan: 0.3,
     cyan: [0.18, 0.9, 1.0],
     magenta: [1.0, 0.14, 0.8],
@@ -95,6 +118,36 @@ function clamp01(value) {
   return Math.max(0, Math.min(1, value));
 }
 
+// Same curve as visualSoftKnee / visualCompress in src/core/VisualDynamics.h.
+function softKnee(x, knee, ceiling) {
+  if (!(x > 0))
+    return 0;
+  if (!(ceiling > knee))
+    return Math.min(x, Math.max(ceiling, 0));
+  if (x <= knee)
+    return x;
+  const span = ceiling - knee;
+  const bent = knee + span * Math.tanh((x - knee) / span);
+  // Same cap as std::nextafter(ceiling, 0) in VisualDynamics.h: the knee approaches the ceiling and stays under it.
+  return Math.min(bent, ceiling - Math.max(Math.abs(ceiling) * 1e-6, 1e-6));
+}
+
+function makeDynamics() {
+  return { reference: VISUAL.dynamics.target * 0.45 };
+}
+
+function compress(input, state, dt) {
+  const cfg = VISUAL.dynamics;
+  const x = Math.max(0, input);
+  const rate = x > state.reference ? cfg.peakAttack : cfg.peakRelease;
+  state.reference += (x - state.reference) * (1 - Math.exp(-rate * Math.max(dt, 0)));
+  if (state.reference < 1e-4)
+    state.reference = 1e-4;
+  const makeup = Math.min(cfg.maxMakeup, cfg.target / state.reference);
+  const bent = softKnee(x * makeup, cfg.knee, cfg.ceiling);
+  return Math.min(bent, cfg.ceiling - 1e-4);
+}
+
 const probe = document.createElement("canvas");
 if (!probe.getContext("webgl2") && !probe.getContext("webgl"))
   callNative("webglUnavailable");
@@ -102,7 +155,8 @@ if (!probe.getContext("webgl2") && !probe.getContext("webgl"))
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
 renderer.setClearColor(0x070414, 1);
-renderer.toneMapping = THREE.NoToneMapping;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1;
 renderer.setSize(window.innerWidth, window.innerHeight, false);
 document.body.appendChild(renderer.domElement);
 
@@ -224,6 +278,230 @@ const form = new THREE.Mesh(
 );
 worldScene.add(form);
 
+const room = VISUAL.room;
+const floorMaterial = new THREE.MeshBasicMaterial({
+  color: 0x140818,
+  transparent: true,
+  opacity: 0.72,
+  toneMapped: false,
+});
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(room.half * 2, room.half * 2), floorMaterial);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = room.floorY;
+worldScene.add(floor);
+
+const wallMaterial = new THREE.MeshBasicMaterial({
+  color: 0x241038,
+  transparent: true,
+  opacity: 0.34,
+  side: THREE.DoubleSide,
+  toneMapped: false,
+});
+function addWall(width, height, x, y, z, yaw) {
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), wallMaterial);
+  mesh.position.set(x, y, z);
+  mesh.rotation.y = yaw;
+  worldScene.add(mesh);
+}
+const wallY = room.floorY + room.wallHeight * 0.5;
+addWall(room.half * 2, room.wallHeight, 0, wallY, -room.half, 0);
+addWall(room.half * 2, room.wallHeight, -room.half, wallY, 0, Math.PI / 2);
+addWall(room.half * 2, room.wallHeight, room.half, wallY, 0, -Math.PI / 2);
+
+const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x7d5cff, transparent: true, opacity: 0.45, toneMapped: false });
+function addEdge(ax, ay, az, bx, by, bz) {
+  const geometry = new THREE.BufferGeometry().setFromPoints([
+    new THREE.Vector3(ax, ay, az),
+    new THREE.Vector3(bx, by, bz),
+  ]);
+  worldScene.add(new THREE.Line(geometry, edgeMaterial));
+}
+const top = room.floorY + room.wallHeight;
+addEdge(-room.half, room.floorY, -room.half, room.half, room.floorY, -room.half);
+addEdge(-room.half, room.floorY, -room.half, -room.half, room.floorY, room.half);
+addEdge(room.half, room.floorY, -room.half, room.half, room.floorY, room.half);
+addEdge(-room.half, top, -room.half, room.half, top, -room.half);
+addEdge(-room.half, top, -room.half, -room.half, top, room.half);
+addEdge(room.half, top, -room.half, room.half, top, room.half);
+addEdge(-room.half, room.floorY, -room.half, -room.half, top, -room.half);
+addEdge(room.half, room.floorY, -room.half, room.half, top, -room.half);
+addEdge(-room.half, room.floorY, room.half, -room.half, top, room.half);
+addEdge(room.half, room.floorY, room.half, room.half, top, room.half);
+
+const speakerRoot = new THREE.Group();
+worldScene.add(speakerRoot);
+const speakerById = new Map();
+let dragId = null;
+let demoSpeakers = [];
+
+function clampRoom(value) {
+  const limit = room.speakerHalf;
+  if (!Number.isFinite(value))
+    return 0;
+  return Math.max(-limit, Math.min(limit, value));
+}
+
+function makeLabel(text) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "rgba(8, 4, 18, 0.78)";
+  ctx.fillRect(8, 8, 240, 48);
+  ctx.font = "28px sans-serif";
+  ctx.fillStyle = "#d7f6ff";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const shown = String(text || "Output").slice(0, 18);
+  ctx.fillText(shown, 128, 32);
+  const texture = new THREE.CanvasTexture(canvas);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, toneMapped: false }));
+  sprite.position.y = room.cabinet.h + 0.28;
+  sprite.scale.set(1.35, 0.34, 1);
+  sprite.userData.texture = texture;
+  return sprite;
+}
+
+function disposeSpeaker(group) {
+  group.traverse((child) => {
+    if (child.geometry)
+      child.geometry.dispose();
+    const materials = child.material ? [].concat(child.material) : [];
+    for (const material of materials) {
+      if (material.map)
+        material.map.dispose();
+      material.dispose();
+    }
+    if (child.userData && child.userData.texture)
+      child.userData.texture.dispose();
+  });
+}
+
+function makeCabinet(id, label) {
+  const group = new THREE.Group();
+  group.userData.speakerId = id;
+  group.userData.label = label;
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(room.cabinet.w, room.cabinet.h, room.cabinet.d),
+    new THREE.MeshBasicMaterial({ color: 0x1a0c22, toneMapped: false })
+  );
+  body.position.y = room.cabinet.h * 0.5;
+  const woofer = new THREE.Mesh(
+    new THREE.CircleGeometry(0.15, 18),
+    new THREE.MeshBasicMaterial({ color: 0xff2bd6, toneMapped: false })
+  );
+  woofer.position.set(0, room.cabinet.h * 0.3, room.cabinet.d * 0.51);
+  const tweeter = new THREE.Mesh(
+    new THREE.CircleGeometry(0.07, 16),
+    new THREE.MeshBasicMaterial({ color: 0x3df0ff, toneMapped: false })
+  );
+  tweeter.position.set(0, room.cabinet.h * 0.62, room.cabinet.d * 0.51);
+  group.add(body, woofer, tweeter, makeLabel(label));
+  return group;
+}
+
+function syncSpeakers(list) {
+  const next = new Set();
+  for (const spot of list) {
+    if (!spot || typeof spot.id !== "string" || spot.id.length === 0)
+      continue;
+    next.add(spot.id);
+    let group = speakerById.get(spot.id);
+    const label = typeof spot.label === "string" && spot.label.length ? spot.label : spot.id;
+    if (!group) {
+      group = makeCabinet(spot.id, label);
+      speakerById.set(spot.id, group);
+      speakerRoot.add(group);
+    } else if (group.userData.label !== label) {
+      const old = group.children.find((child) => child.isSprite);
+      if (old) {
+        group.remove(old);
+        if (old.material) {
+          if (old.material.map)
+            old.material.map.dispose();
+          old.material.dispose();
+        }
+      }
+      group.add(makeLabel(label));
+      group.userData.label = label;
+    }
+    if (dragId !== spot.id) {
+      group.position.set(clampRoom(Number(spot.x)), room.floorY, clampRoom(Number(spot.z)));
+    }
+  }
+  for (const [id, group] of speakerById) {
+    if (next.has(id))
+      continue;
+    if (dragId === id)
+      dragId = null;
+    speakerRoot.remove(group);
+    disposeSpeaker(group);
+    speakerById.delete(id);
+  }
+}
+
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+const floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -room.floorY);
+const floorHit = new THREE.Vector3();
+
+function pointerToNdc(event) {
+  const rect = renderer.domElement.getBoundingClientRect();
+  const width = rect.width || 1;
+  const height = rect.height || 1;
+  pointerNdc.x = ((event.clientX - rect.left) / width) * 2 - 1;
+  pointerNdc.y = -((event.clientY - rect.top) / height) * 2 + 1;
+}
+
+renderer.domElement.addEventListener("pointerdown", (event) => {
+  if (mode !== SCENE)
+    return;
+  pointerToNdc(event);
+  raycaster.setFromCamera(pointerNdc, perspective);
+  const hits = raycaster.intersectObjects(speakerRoot.children, true);
+  if (!hits.length)
+    return;
+  let object = hits[0].object;
+  while (object && !object.userData.speakerId)
+    object = object.parent;
+  if (!object || !object.userData.speakerId)
+    return;
+  dragId = object.userData.speakerId;
+  if (renderer.domElement.setPointerCapture)
+    renderer.domElement.setPointerCapture(event.pointerId);
+});
+
+renderer.domElement.addEventListener("pointermove", (event) => {
+  if (!dragId || mode !== SCENE)
+    return;
+  pointerToNdc(event);
+  raycaster.setFromCamera(pointerNdc, perspective);
+  if (!raycaster.ray.intersectPlane(floorPlane, floorHit))
+    return;
+  const group = speakerById.get(dragId);
+  if (!group)
+    return;
+  group.position.set(clampRoom(floorHit.x), room.floorY, clampRoom(floorHit.z));
+});
+
+function finishSpeakerDrag() {
+  if (!dragId)
+    return;
+  const group = speakerById.get(dragId);
+  const id = dragId;
+  dragId = null;
+  if (!group)
+    return;
+  const x = clampRoom(group.position.x);
+  const z = clampRoom(group.position.z);
+  group.position.set(x, room.floorY, z);
+  demoSpeakers = demoSpeakers.map((spot) => (spot.id === id ? { ...spot, x, z } : spot));
+  callNative("placeSpeaker", [id, x, z]);
+}
+
+renderer.domElement.addEventListener("pointerup", finishSpeakerDrag);
+renderer.domElement.addEventListener("pointercancel", finishSpeakerDrag);
+
 const gradient = VISUAL.gradient;
 const volumeMaterial = new THREE.ShaderMaterial({
   side: THREE.BackSide,
@@ -245,6 +523,7 @@ const volumeMaterial = new THREE.ShaderMaterial({
     uDepthHue: { value: gradient.depthHue },
     uEnergy: { value: gradient.energy },
     uLoudnessEnergy: { value: gradient.loudnessEnergy },
+    uAddCap: { value: VISUAL.dynamics.addCap },
     uAccentSpan: { value: gradient.accentSpan },
     uSteps: { value: gradient.stepsHigh },
     uOctaves: { value: gradient.octavesHigh },
@@ -277,6 +556,7 @@ const volumeMaterial = new THREE.ShaderMaterial({
     uniform float uDepthHue;
     uniform float uEnergy;
     uniform float uLoudnessEnergy;
+    uniform float uAddCap;
     uniform float uAccentSpan;
     uniform float uSteps;
     uniform float uOctaves;
@@ -367,6 +647,7 @@ const volumeMaterial = new THREE.ShaderMaterial({
         color += sampleColor * 0.2 * remaining * energy;
         remaining *= 0.8;
       }
+      color = min(color, vec3(uAddCap));
       gl_FragColor = vec4(color, 1.0);
     }
   `,
@@ -399,6 +680,11 @@ let bass = 0;
 let mid = 0;
 let treble = 0;
 let level = 0;
+const bandState = { bass: makeDynamics(), mid: makeDynamics(), treble: makeDynamics(), level: makeDynamics() };
+const binState = Array.from({ length: barCount }, () => makeDynamics());
+let lumaGain = 1;
+let lumaTick = 0;
+let probeLock = false;
 let accent = 0;
 let emitBudget = 0;
 let trailPhase = 0;
@@ -556,7 +842,10 @@ function writeParticles() {
   const shimmerAmp = treble * sceneCfg.shimmer.trebleAmount;
   const shimmerSpeed = sceneCfg.shimmer.trebleSpeed;
   const pointSize = sceneCfg.size.base + mid * sceneCfg.size.mid + treble * sceneCfg.size.treble;
-  const brightness = sceneCfg.brightness.base + mid * sceneCfg.brightness.mid + treble * sceneCfg.brightness.treble;
+  let brightness = sceneCfg.brightness.base + mid * sceneCfg.brightness.mid + treble * sceneCfg.brightness.treble;
+  brightness = Math.min(VISUAL.dynamics.maxBrightness, brightness);
+  brightness = Math.min(brightness, VISUAL.dynamics.maxParticleProduct / Math.max(1, activeParticles));
+  brightness *= lumaGain;
   let vertex = 0;
 
   for (let i = 0; i < particleCount; ++i) {
@@ -660,19 +949,26 @@ function applyQuality(high) {
 
 function applyFrame(dt) {
   const frame = latest;
-  const targetBass = frame && typeof frame.bass === "number" ? frame.bass : 0;
-  const targetMid = frame && typeof frame.mid === "number" ? frame.mid : 0;
-  const targetTreble = frame && typeof frame.treble === "number" ? frame.treble : 0;
-  const targetLevel = frame && typeof frame.level === "number" ? frame.level : 0;
-  bass = follow(bass, targetBass, dt, VISUAL.attack, VISUAL.release);
-  mid = follow(mid, targetMid, dt, VISUAL.attack, VISUAL.release);
-  treble = follow(treble, targetTreble, dt, VISUAL.attack, VISUAL.release);
-  level = follow(level, targetLevel, dt, VISUAL.attack, VISUAL.release);
+  const rawBass = frame && typeof frame.bass === "number" ? frame.bass : 0;
+  const rawMid = frame && typeof frame.mid === "number" ? frame.mid : 0;
+  const rawTreble = frame && typeof frame.treble === "number" ? frame.treble : 0;
+  const rawLevel = frame && typeof frame.level === "number" ? frame.level : 0;
+  bass = follow(bass, compress(rawBass, bandState.bass, dt), dt, VISUAL.attack, VISUAL.release);
+  mid = follow(mid, compress(rawMid, bandState.mid, dt), dt, VISUAL.attack, VISUAL.release);
+  treble = follow(treble, compress(rawTreble, bandState.treble, dt), dt, VISUAL.attack, VISUAL.release);
+  level = follow(level, compress(rawLevel, bandState.level, dt), dt, VISUAL.attack, VISUAL.release);
   accent += (level - accent) * (1 - Math.exp(-VISUAL.accentFollow * dt));
   accentColor.setHSL(lerp(0.51, 0.89, clamp01(accent)), 0.86, 0.62);
 
   if (frame && (frame.mode === WAVE || frame.mode === BARS || frame.mode === SCENE))
     mode = frame.mode;
+
+  const nativeSpeakers = frame && Array.isArray(frame.speakers) ? frame.speakers : [];
+  const nativeIds = new Set(nativeSpeakers.map((spot) => spot && spot.id));
+  const incoming = demoSpeakers.length
+    ? nativeSpeakers.concat(demoSpeakers.filter((spot) => spot && !nativeIds.has(spot.id)))
+    : nativeSpeakers;
+  syncSpeakers(incoming);
 
   if (caption) {
     caption.textContent = MODE_LABEL[mode] || "Waveform";
@@ -688,17 +984,18 @@ function applyFrame(dt) {
     drawnSerial = frameSerial;
   }
   const shownTrails = qualityHigh ? VISUAL.waveform.trails : VISUAL.waveform.trailsLow;
+  const waveDrive = (0.4 + 0.6 * level) * lumaGain;
   for (let i = 0; i < ribbons.length; ++i) {
     const samplesForRibbon = waveHistory[i];
-    const fade = i < shownTrails && samplesForRibbon ? Math.pow(0.72, i) : 0;
+    const fade = i < shownTrails && samplesForRibbon ? Math.pow(0.72, i) * waveDrive : 0;
     writeRibbon(ribbons[i], samplesForRibbon || [0, 0], VISUAL.waveform.halfWidth * (1 - i * 0.04), fade);
   }
 
   const bins = frame && Array.isArray(frame.bins) ? frame.bins : [];
   const floor = -1.55;
   for (let i = 0; i < barCount; ++i) {
-    const target = clamp01(bins[i] || 0);
-    smoothBins[i] = follow(smoothBins[i], target, dt, VISUAL.attack, VISUAL.release);
+    const shaped = compress(Math.max(0, bins[i] || 0), binState[i], dt);
+    smoothBins[i] = follow(smoothBins[i], shaped, dt, VISUAL.attack, VISUAL.release);
     const height = 0.08 + smoothBins[i] * VISUAL.bars.height;
     const x = -6.4 + (12.8 * (i + 0.5)) / barCount;
     barDummy.position.set(x, floor + height * 0.5, 0);
@@ -736,9 +1033,14 @@ function applyFrame(dt) {
   uniforms.uTime.value = simTime * gradient.timeSpeed * 8;
   uniforms.uAccent.value = accent;
   uniforms.uLevel.value = level;
-  bloomPass.strength = VISUAL.bloom.base + bass * VISUAL.bloom.bass;
+  uniforms.uAddCap.value = VISUAL.dynamics.addCap;
+  const energy = Math.min(VISUAL.dynamics.maxEnergy, (gradient.energy + gradient.loudnessEnergy * level) * lumaGain);
+  uniforms.uEnergy.value = energy;
+  uniforms.uLoudnessEnergy.value = 0;
+  bloomPass.strength = Math.min(VISUAL.dynamics.maxBloom, (VISUAL.bloom.base + bass * VISUAL.bloom.bass) * lumaGain);
   bloomPass.radius = VISUAL.bloom.radius;
   bloomPass.threshold = VISUAL.bloom.threshold;
+  renderer.toneMappingExposure = lumaGain;
 }
 
 function renderScene() {
@@ -776,6 +1078,37 @@ function frame(now) {
   }
   applyFrame(dt);
   renderScene();
+  if ((lumaTick++ % 10) === 0)
+    lumaGain = guardLuminance(lumaGain, dt * 10);
+}
+
+function averageLuminance() {
+  const sample = averageLuminance.canvas || (averageLuminance.canvas = document.createElement("canvas"));
+  sample.width = 48;
+  sample.height = 27;
+  const ctx = sample.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(renderer.domElement, 0, 0, sample.width, sample.height);
+  const data = ctx.getImageData(0, 0, sample.width, sample.height).data;
+  let sum = 0;
+  const count = data.length / 4;
+  for (let i = 0; i < data.length; i += 4)
+    sum += 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+  return sum / (count * 255);
+}
+
+function guardLuminance(gain, dt) {
+  let measured = gain;
+  try {
+    measured = averageLuminance();
+  } catch (error) {
+    return gain;
+  }
+  const ceiling = VISUAL.dynamics.luminanceCeiling;
+  if (measured > ceiling && measured > 1e-4) {
+    return Math.max(VISUAL.dynamics.luminanceFloorGain, gain * (ceiling / measured));
+  }
+  const restored = gain + (1 - gain) * (1 - Math.exp(-VISUAL.dynamics.luminanceRelease * dt));
+  return Math.min(1, restored);
 }
 
 window.addEventListener("resize", resize);
@@ -787,10 +1120,45 @@ window.addEventListener("keydown", (event) => {
 }, true);
 
 window.wavisCapture = () => renderer.domElement.toDataURL("image/png");
+window.wavisLuminance = () => {
+  try {
+    return averageLuminance();
+  } catch (error) {
+    return -1;
+  }
+};
+window.wavisProbe = (payload) => {
+  probeLock = true;
+  latest = payload;
+  frameSerial += 1;
+};
+window.wavisDemoSpeakers = (list) => {
+  demoSpeakers = Array.isArray(list) ? list : [];
+};
+window.wavisMoveSpeaker = (id, x, z) => {
+  const nx = clampRoom(Number(x));
+  const nz = clampRoom(Number(z));
+  let found = false;
+  demoSpeakers = demoSpeakers.map((spot) => {
+    if (!spot || spot.id !== id)
+      return spot;
+    found = true;
+    return { ...spot, x: nx, z: nz };
+  });
+  if (!found)
+    demoSpeakers.push({ id, label: id, x: nx, z: nz });
+  const group = speakerById.get(id);
+  if (group)
+    group.position.set(nx, room.floorY, nz);
+  callNative("placeSpeaker", [id, nx, nz]);
+  return nx + "," + nz;
+};
 
 const backend = window.__JUCE__ && window.__JUCE__.backend;
 if (backend && typeof backend.addEventListener === "function") {
   backend.addEventListener("wavisFrame", (payload) => {
+    if (probeLock)
+      return;
     latest = payload;
     frameSerial += 1;
   });

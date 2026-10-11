@@ -8,6 +8,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 
 #include <string>
+#include <utility>
 #include <vector>
 
 class MainComponent : public juce::Component, private juce::Timer, private AudioEngine::Listener
@@ -35,6 +36,8 @@ private:
     void layoutControls();
     void setStage(bool enabled);
     void syncFeedback();
+    void sampleLuma(const char* phase);
+    void printLumaSummary();
     std::vector<MonitorDesc> collectMonitors() const;
 
     AudioEngine engine;
@@ -80,6 +83,16 @@ private:
     int demoTicks = 0;
     int demoSeconds = 7;
     int demoShots = 0;
+    int lumaPhaseTick = 0;
+    bool lumaBusy = false;
+    bool demoRoomShown = false;
+    bool demoRoomMoved = false;
+    struct LumaSample
+    {
+        std::string phase;
+        double value = 0.0;
+    };
+    std::vector<LumaSample> lumaSamples;
     juce::File demoDir;
     bool buildingUi = false;
 
