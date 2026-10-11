@@ -1,0 +1,8 @@
+build/
+cmake-build-*/
+.DS_Store
+*.user
+.cache/
+compile_commands.json
+Testing/
+web/node_modules/

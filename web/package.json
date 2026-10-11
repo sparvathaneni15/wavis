@@ -1,0 +1,13 @@
+{
+  "name": "wavis-visual",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --format=iife --outfile=dist/app.js && cp index.html dist/index.html"
+  },
+  "dependencies": {
+    "three": "0.170.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2"
+  }
+}
