@@ -279,15 +279,15 @@ public:
         const auto wasapi = makeEndpoint("Windows Audio", "Speakers", false, true);
         const auto dsound = makeEndpoint("DirectSound", "Speakers", false, true);
         const auto asio = makeEndpoint("ASIO", " speakers ", false, true);
-        const auto other = makeEndpoint("DirectSound", "Booth", false, true);
+        const auto dsBooth = makeEndpoint("DirectSound", "Booth", false, true);
         const auto loopA = makeEndpoint("WASAPI Loopback", "id-a", true, false, true);
         const auto loopB = makeEndpoint("WASAPI Loopback", "id-b", true, false, true);
 
-        auto collapsed = collapseDuplicateDevices<AudioEndpoint>({ wasapi, dsound, asio, other, loopA, loopB }, {});
+        auto collapsed = collapseDuplicateDevices<AudioEndpoint>({ wasapi, dsound, asio, dsBooth, loopA, loopB }, {});
         expectEquals(static_cast<int>(collapsed.size()), 4);
         expect(collapsed[0].id == wasapi.id);
 
-        collapsed = collapseDuplicateDevices<AudioEndpoint>({ wasapi, dsound, other }, { dsound.id });
+        collapsed = collapseDuplicateDevices<AudioEndpoint>({ wasapi, dsound, dsBooth }, { dsound.id });
         expectEquals(static_cast<int>(collapsed.size()), 2);
         expect(collapsed[0].id == dsound.id);
 
