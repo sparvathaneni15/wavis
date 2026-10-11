@@ -34,6 +34,18 @@ inline bool contains(std::string_view haystack, std::string_view needle) noexcep
     return haystack.find(needle) != std::string_view::npos;
 }
 
+// Best effort: the name or id the OS gave us mentions a Bluetooth transport.
+// Product nicknames alone (no "bluetooth" / "bluez" / "BTHENUM") are not treated as Bluetooth.
+inline bool isBluetoothTransport(std::string_view driver, std::string_view name, std::string_view id)
+{
+    const auto mentions = [](const std::string& text)
+    {
+        return text.find("bluetooth") != std::string::npos || text.find("bluez") != std::string::npos
+               || text.find("bthenum") != std::string::npos || text.find("bthhfenum") != std::string::npos;
+    };
+    return mentions(asciiLower(driver)) || mentions(asciiLower(name)) || mentions(asciiLower(id));
+}
+
 inline bool endsWith(std::string_view text, std::string_view suffix) noexcept
 {
     return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;

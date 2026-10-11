@@ -60,6 +60,7 @@ int OutputFanout::activateOutput(double outputSampleRate) noexcept
         slot.overflows.store(0, std::memory_order_relaxed);
         slot.latencyMs.store(0.0f, std::memory_order_relaxed);
         slot.driftMs.store(0.0f, std::memory_order_relaxed);
+        slot.outputLevel.store(0.0f, std::memory_order_relaxed);
         slot.active.store(true, std::memory_order_release);
         return i;
     }
@@ -73,6 +74,7 @@ void OutputFanout::deactivateOutput(int slot) noexcept
         return;
     auto& s = slots[static_cast<size_t>(slot)];
     s.active.store(false, std::memory_order_release);
+    s.outputLevel.store(0.0f, std::memory_order_relaxed);
     s.ring.reset();
 }
 
@@ -153,6 +155,7 @@ void OutputFanout::applyGain(Slot& slot, float* interleaved, int frames) noexcep
         for (int i = 0; i < frames * kChannels; ++i)
             interleaved[i] *= gain;
         slot.smoothed = gain;
+        noteOutputLevel(slot, interleaved, frames);
         return;
     }
 
@@ -163,6 +166,19 @@ void OutputFanout::applyGain(Slot& slot, float* interleaved, int frames) noexcep
         interleaved[i * 2 + 1] *= gain;
     }
     slot.smoothed = gain;
+    noteOutputLevel(slot, interleaved, frames);
+}
+
+void OutputFanout::noteOutputLevel(Slot& slot, const float* interleaved, int frames) noexcept
+{
+    float peak = 0.0f;
+    if (interleaved != nullptr)
+    {
+        for (int i = 0; i < frames * kChannels; ++i)
+            peak = std::max(peak, std::abs(interleaved[i]));
+    }
+    const float previous = slot.outputLevel.load(std::memory_order_relaxed);
+    slot.outputLevel.store(followOutputLevel(previous, peak), std::memory_order_relaxed);
 }
 
 int OutputFanout::pull(int slotIndex, float* interleavedStereo, int numFrames) noexcept
@@ -174,6 +190,7 @@ int OutputFanout::pull(int slotIndex, float* interleavedStereo, int numFrames) n
     if (!slot.active.load(std::memory_order_acquire))
     {
         std::fill(interleavedStereo, interleavedStereo + numFrames * kChannels, 0.0f);
+        slot.outputLevel.store(0.0f, std::memory_order_relaxed);
         return 0;
     }
 
@@ -306,6 +323,13 @@ float OutputFanout::getDriftMs(int slot) const noexcept
     if (slot < 0 || slot >= kMaxOutputs)
         return 0.0f;
     return slots[static_cast<size_t>(slot)].driftMs.load(std::memory_order_relaxed);
+}
+
+float OutputFanout::getOutputLevel(int slot) const noexcept
+{
+    if (slot < 0 || slot >= kMaxOutputs)
+        return 0.0f;
+    return slots[static_cast<size_t>(slot)].outputLevel.load(std::memory_order_relaxed);
 }
 
 uint32_t OutputFanout::getUnderrunCount(int slot) const noexcept

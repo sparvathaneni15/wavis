@@ -79,7 +79,15 @@ Particle motion is a CPU loop over typed arrays (a few hundred particles). Each 
 
 The background is a raymarched colour volume on the inside of a large sphere (a GPU fragment shader, not an empty clear colour). The field mixes cyan, magenta, and violet from layers along x, y, and z, a little 3D noise, and a hue that changes with depth and with time. Before the field is sampled, the shader bends the sample coordinate toward the same wells the particles use, in proportion to bass mass, so the colour itself curves instead of sitting in flat sheets. Overall loudness moves the hue slowly. `VISUAL.gradient` holds the step count, octave count, warp, energy, and palette.
 
-The same 3D scene is also the speaker room. A floor and three walls (open toward the camera) sit in the colour volume, in the same cyan / magenta / violet palette. Each selected output is one cabinet on the floor, up to the existing limit of 16, with the output name on a small label. Drag a cabinet and it stays where you put it: the page calls the native `placeSpeaker` function, and the spot is written into the `WAVIS1` settings as `speaker=<id>`, a tab, then x and z. Positions are clamped to the floor (`kSpeakerFloorHalf`, 3.6). An output you have not placed yet starts on an arc with the other unplaced speakers. Deselecting an output removes its cabinet; selecting it again restores the saved spot. The cabinets are only a picture of the routes — audio still goes out through the devices, not through the page.
+The picture is also where you choose outputs, when the web view is available. The native output list is hidden then, and it comes back only if the page falls back to OpenGL. Detected outputs sit in a tray on the picture. Drag one onto the floor (in the 3D scene the drop follows the pointer; in Waveform or Spectrum it takes the next open spot). A floor and three walls, open toward the camera, use the same cyan / magenta / violet palette as the rest of the picture.
+
+Click a cabinet to select it. That calls the same `setOutputSelected` the old list used, so the engine opens or closes that output and nothing else keeps a second copy of the selection. A selected cabinet is lit, with a few soft rings that expand with that output’s own level (measured on its ring after gain and mute, then passed through the same compressor as the rest of the picture). Turning one on plays a short ring burst; turning it off plays one fading ring. An unselected cabinet is a dim wireframe with no rings. Hover, or keyboard focus, lifts it slightly and draws a faint outline.
+
+Arrow keys move focus between cabinets. Enter or Space toggles the focused one. The same keys work on the fallback list. A focused cabinet shows a small panel: live / disconnected / error, latency, gain, mute, and a Bluetooth mark when the OS name, id, or (on Windows) endpoint enumerator reports a Bluetooth transport.
+
+A listener marker sits near the origin. It is only a marker. Delay and manual offsets are not applied.
+
+Presets drop the first detected outputs onto a starting layout: stereo pair, surround, or desk plus garage. They write positions and do not change which outputs are selected. Positions are stored by device id (`speaker=<id>`, a tab, x, a tab, z) and clamped to the floor. A device that leaves and comes back is put on its saved spot. A selected output that has never been dragged still appears on the default arc so the route stays visible.
 
 The target is 60 fps. After a short warmup, if a frame takes longer than `VISUAL.budgetMs` for several frames in a row, the page turns bloom off, shortens trails, draws fewer particles, and drops the volume to fewer steps and one noise octave. It restores the full look only after many fast frames.
 
@@ -99,7 +107,7 @@ The Display menu lists `juce::Desktop::getDisplays()`. **Fullscreen on display N
 
 ## Settings
 
-Driver, input, visual mode, file path, each output’s gain, mute, and selection, and each speaker’s floor position are stored with `juce::ApplicationProperties` under the key `state`. The payload is a small `WAVIS1` text document. Gains are clamped to 0…1. Speaker lines are `speaker=<id>`, a tab, x, a tab, and z. Older files without those lines still load; those speakers use the default arc until you drag them.
+Driver, input, visual mode, file path, each output’s gain, mute, and selection, and each placed speaker’s floor position are stored with `juce::ApplicationProperties` under the key `state`. The payload is a small `WAVIS1` text document. Gains are clamped to 0…1. Speaker lines are `speaker=<id>`, a tab, x, a tab, and z. Older files without those lines still load. A selected output with no saved spot uses the default arc until you drag it or apply a preset.
 
 ## Build
 
@@ -158,7 +166,7 @@ That defines `JUCE_ASIO=1` for the app target only.
 
 ## Run it
 
-Start the app and press **Start**. With no outputs selected, the test tone still drives the visuals (“Video only”). Tick one or more outputs to hear them together; each row’s slider is gain, and Mute is per output.
+Start the app and press **Start**. With no outputs selected, the test tone still drives the visuals (“Video only”). In the picture, drag outputs from the tray into the room and click a cabinet to send audio there. Gain and mute are on the cabinet’s panel. If the picture is the OpenGL fallback, the output list on the left is the control instead: Space toggles the outlined row.
 
 - **DJ controller.** Plug it in, choose its driver (ASIO, WASAPI, Core Audio, or ALSA), and pick the controller or its interface as the input. Select the outputs that should receive the mix (monitors, booth, a recorder). If the controller is unplugged mid-session, its row or input shows Disconnected and comes back when it reappears.
 - **System or browser audio.** On Windows, choose **WASAPI Loopback** (or All drivers) and a **System/Browser audio** entry. On Linux, choose **PulseAudio** and an entry that starts with **System/Browser audio — Monitor of**. On macOS, install BlackHole or Loopback, route the browser to that device, then select the matching **System/Browser audio** input. If the hint says macOS has no native loopback, none of those drivers was detected.
@@ -172,7 +180,7 @@ Headless check. The app starts the test tone, cycles Waveform, Spectrum, and 3D 
 
 ## Tests
 
-`WavisTests` covers the lock-free ring, drift planning, fan-out of one signal to several simulated outputs (including with drift correction on), device-list diffing, reconnect when a selected device leaves and returns, system-audio classification, the feedback-loop check, settings parse/apply (including speaker spots, floor clamp, and the default arc), the visual soft-knee compressor, monitor hot-plug (the stage returns to the main window when its display id is gone), the native waveform/FFT framing sent to Three.js, and the bass/mid/treble split of that FFT.
+`WavisTests` covers the lock-free ring, drift planning, fan-out of one signal to several simulated outputs (including with drift correction on), device-list diffing, reconnect when a selected device leaves and returns, system-audio classification, the feedback-loop check, settings parse/apply (including speaker spots, floor clamp, and the default arc), speaker presets, Bluetooth-transport detection, the per-output level follower, the visual soft-knee compressor, monitor hot-plug (the stage returns to the main window when its display id is gone), the native waveform/FFT framing sent to Three.js, and the bass/mid/treble split of that FFT. The selection toggle uses the same `withSelection` path as the output list.
 
 ```bash
 ./build/WavisTests_artefacts/Release/WavisTests

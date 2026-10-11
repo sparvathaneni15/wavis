@@ -314,7 +314,9 @@ std::vector<AudioEngine::OutputChoice> AudioEngine::getOutputs() const
         {
             choice.latencyMs = fanout.getLatencyMs(slot);
             choice.driftMs = fanout.getDriftMs(slot);
+            choice.level = fanout.getOutputLevel(slot);
         }
+        choice.bluetooth = route.bluetooth;
         choices.push_back(choice);
     }
     return choices;
@@ -323,28 +325,42 @@ std::vector<AudioEngine::OutputChoice> AudioEngine::getOutputs() const
 std::vector<AudioEngine::SpeakerChoice> AudioEngine::getSpeakers() const
 {
     std::vector<SpeakerChoice> spots;
+    std::vector<int> implied;
     for (const auto& choice : getOutputs())
     {
-        if (!choice.selected)
-            continue;
         SpeakerChoice spot;
         spot.id = choice.id;
         spot.label = choice.label;
-        spots.push_back(std::move(spot));
-    }
+        spot.status = choice.status;
+        spot.gain = choice.gain;
+        spot.level = choice.level;
+        spot.latencyMs = choice.latencyMs;
+        spot.selected = choice.selected;
+        spot.muted = choice.muted;
+        spot.available = choice.available;
+        spot.bluetooth = choice.bluetooth;
 
-    const int count = static_cast<int>(spots.size());
-    for (int i = 0; i < count; ++i)
-    {
-        auto& spot = spots[static_cast<size_t>(i)];
         const auto found = speakerSpots.find(spot.id);
         if (found != speakerSpots.end())
         {
+            spot.placed = true;
             spot.x = clampSpeakerCoord(found->second.first);
             spot.z = clampSpeakerCoord(found->second.second);
         }
-        else
-            defaultSpeakerArc(i, count, spot.x, spot.z);
+        else if (choice.selected)
+        {
+            // A route that was selected from the list still has to be visible in the room.
+            spot.placed = true;
+            implied.push_back(static_cast<int>(spots.size()));
+        }
+        spots.push_back(std::move(spot));
+    }
+
+    const int count = static_cast<int>(implied.size());
+    for (int i = 0; i < count; ++i)
+    {
+        auto& spot = spots[static_cast<size_t>(implied[static_cast<size_t>(i)])];
+        defaultSpeakerArc(i, count, spot.x, spot.z);
     }
     return spots;
 }
@@ -355,6 +371,19 @@ void AudioEngine::setSpeakerPosition(const std::string& id, float x, float z)
         return;
     speakerSpots[id] = { clampSpeakerCoord(x), clampSpeakerCoord(z) };
     saveSettings();
+}
+
+void AudioEngine::applySpeakerPreset(const std::string& name)
+{
+    if (!isSpeakerPresetName(name))
+        return;
+    std::vector<std::string> ids;
+    for (const auto& choice : getOutputs())
+        ids.push_back(choice.id);
+    for (const auto& spot : assignSpeakerPreset(name, ids))
+        speakerSpots[spot.id] = { spot.x, spot.z };
+    saveSettings();
+    notifyChanged();
 }
 
 void AudioEngine::setOutputSelected(const std::string& id, bool selected)
@@ -909,6 +938,7 @@ void AudioEngine::rescan()
         {
             auto ep = makeEndpoint(typeName, name.toStdString(), true, false);
             ep.systemAudio = isSystemAudioName(typeName, ep.deviceName);
+            ep.bluetooth = isBluetoothTransport(typeName, ep.deviceName, ep.id);
             ep.label = ep.systemAudio ? systemAudioLabel(ep.deviceName) : ep.deviceName;
             if (findEndpoint(next, ep.id) == nullptr)
                 next.push_back(ep);
@@ -916,10 +946,20 @@ void AudioEngine::rescan()
         for (const auto& name : type->getDeviceNames(false))
         {
             auto ep = makeEndpoint(typeName, name.toStdString(), false, true, false);
+            ep.bluetooth = isBluetoothTransport(typeName, ep.deviceName, ep.id);
             ep.label = ep.deviceName;
             if (findEndpoint(next, ep.id) == nullptr)
                 next.push_back(std::move(ep));
         }
+    }
+
+    const auto bluetoothNames = bluetoothRenderNames();
+    for (auto& ep : next)
+    {
+        if (!ep.output || ep.bluetooth)
+            continue;
+        for (const auto& name : bluetoothNames)
+            ep.bluetooth = ep.bluetooth || name == ep.deviceName;
     }
 
     for (const auto& extra : enumerateExtraInputs())

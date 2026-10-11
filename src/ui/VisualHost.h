@@ -26,6 +26,7 @@ public:
     std::string backendLabel() const;
 
     void setExitFullscreen(std::function<void()> callback);
+    void setBackendChanged(std::function<void()> callback);
     void resized() override;
 
 private:
@@ -34,6 +35,7 @@ private:
 
     AudioEngine& audio;
     std::function<void()> exitFullscreen;
+    std::function<void()> backendChanged;
     std::unique_ptr<class WebStage> web;
     std::unique_ptr<class VisualView> gl;
     std::string mode = "oscilloscope";

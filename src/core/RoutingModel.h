@@ -27,6 +27,7 @@ struct OutputRoute
     bool selected = false;
     bool available = false;
     bool systemAudio = false;
+    bool bluetooth = false;
     LinkState state = LinkState::idle;
 };
 
@@ -96,6 +97,7 @@ inline std::vector<OutputRoute> mergeOutputRoutes(const std::vector<OutputRoute>
         route.deviceName = ep.deviceName;
         route.label = ep.label.empty() ? ep.deviceName : ep.label;
         route.available = true;
+        route.bluetooth = ep.bluetooth;
 
         for (const auto& old : previous)
         {

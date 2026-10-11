@@ -605,6 +605,79 @@ public:
     }
 };
 
+class SpeakerRoomTest : public juce::UnitTest
+{
+public:
+    SpeakerRoomTest() : juce::UnitTest("Speaker room", "Wavis") {}
+
+    void runTest() override
+    {
+        beginTest("presets lay speakers out and leave the rest of the list alone");
+        const std::vector<std::string> ids { "a", "b", "c", "d", "e", "f", "g" };
+        const auto stereo = assignSpeakerPreset("stereo", ids);
+        expectEquals(static_cast<int>(stereo.size()), 2);
+        expect(stereo[0].id == "a");
+        expect(stereo[0].x < -1.0f);
+        expect(stereo[1].x > 1.0f);
+        expect(std::abs(stereo[0].z) <= kSpeakerFloorHalf);
+
+        const auto surround = assignSpeakerPreset("surround", ids);
+        expectEquals(static_cast<int>(surround.size()), 6);
+        expect(surround[2].id == "c");
+        expect(surround[2].z < surround[0].z);
+        expect(surround[3].z > 0.5f);
+
+        const auto desk = assignSpeakerPreset("desk-garage", ids);
+        expectEquals(static_cast<int>(desk.size()), 4);
+        expect(desk[0].z > 0.8f);
+        expect(desk[2].z < -1.5f);
+        expect(std::abs(desk[0].x) < std::abs(desk[2].x));
+        expect(!isSpeakerPresetName("line"));
+        expect(assignSpeakerPreset("nope", ids).empty());
+
+        const auto shortList = assignSpeakerPreset("surround", { "only" });
+        expectEquals(static_cast<int>(shortList.size()), 1);
+        expect(shortList[0].id == "only");
+
+        beginTest("a saved spot survives without a route line so a returning device can be placed again");
+        const auto saved = parseSettings("WAVIS1\nspeaker=WASAPI::Buds\t-1.2\t0.4\n");
+        expect(saved.has_value());
+        if (saved.has_value())
+        {
+            expect(saved->outputs.empty());
+            expectEquals(static_cast<int>(saved->speakers.size()), 1);
+            expect(saved->speakers[0].id == "WASAPI::Buds");
+            expect(near(saved->speakers[0].x, -1.2f));
+            expect(near(saved->speakers[0].z, 0.4f));
+        }
+
+        beginTest("bluetooth is only the transport the name or id reports");
+        expect(isBluetoothTransport("PulseAudio", "bluez_output.AA.a2dp-sink", "PulseAudio::bluez_output.AA.a2dp-sink"));
+        expect(isBluetoothTransport("WASAPI", "Headphones", "WASAPI::Headphones-{BTHENUM}"));
+        expect(!isBluetoothTransport("ALSA", "hw:0,0", "ALSA::hw:0,0"));
+        expect(!isBluetoothTransport("CoreAudio", "MacBook Speakers", "CoreAudio::MacBook Speakers"));
+
+        beginTest("per-output level attacks quickly and falls off without sticking");
+        expect(near(followOutputLevel(0.0f, 0.8f), 0.8f));
+        expect(near(followOutputLevel(0.2f, 2.0f), 1.0f));
+        const float fallen = followOutputLevel(0.5f, 0.0f);
+        expect(fallen < 0.5f);
+        expect(fallen > 0.4f);
+        expect(near(followOutputLevel(0.2f, -1.0f), 0.2f * 0.94f));
+
+        beginTest("clicking a speaker toggles the same selection flag the output list uses");
+        OutputRoute route;
+        route.id = "ALSA::hw:0,0";
+        route.selected = false;
+        auto on = withSelection({ route }, route.id, true);
+        expect(on[0].selected);
+        auto off = withSelection(on, route.id, false);
+        expect(!off[0].selected);
+        expect(off[0].id == route.id);
+    }
+};
+
+static SpeakerRoomTest speakerRoomTest;
 static VisualDynamicsTest visualDynamicsTest;
 static RingBufferTest ringBufferTest;
 static DriftTest driftTest;

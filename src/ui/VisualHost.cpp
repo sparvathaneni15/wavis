@@ -61,6 +61,8 @@ void VisualHost::installWeb()
     web->setPictureFullscreen(pictureFullscreen);
     addAndMakeVisible(web.get());
     resized();
+    if (backendChanged)
+        backendChanged();
 }
 
 void VisualHost::installFallback()
@@ -70,6 +72,8 @@ void VisualHost::installFallback()
     gl->setMode(mode);
     addAndMakeVisible(gl.get());
     resized();
+    if (backendChanged)
+        backendChanged();
 }
 
 void VisualHost::setPictureFullscreen(bool enabled)
@@ -130,6 +134,11 @@ std::string VisualHost::backendLabel() const
 void VisualHost::setExitFullscreen(std::function<void()> callback)
 {
     exitFullscreen = std::move(callback);
+}
+
+void VisualHost::setBackendChanged(std::function<void()> callback)
+{
+    backendChanged = std::move(callback);
 }
 
 void VisualHost::resized()

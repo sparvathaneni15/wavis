@@ -422,6 +422,67 @@ std::vector<ExtraInput> enumerateWasapiLoopback()
 #endif
 } // namespace
 
+std::vector<std::string> bluetoothRenderNames()
+{
+    std::vector<std::string> names;
+#if defined(_WIN32)
+    const HRESULT init = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    IMMDeviceEnumerator* enumerator = nullptr;
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL, IID_PPV_ARGS(&enumerator)))
+        || enumerator == nullptr)
+    {
+        if (SUCCEEDED(init))
+            CoUninitialize();
+        return names;
+    }
+
+    IMMDeviceCollection* collection = nullptr;
+    if (FAILED(enumerator->EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE, &collection)) || collection == nullptr)
+    {
+        enumerator->Release();
+        if (SUCCEEDED(init))
+            CoUninitialize();
+        return names;
+    }
+
+    UINT count = 0;
+    collection->GetCount(&count);
+    for (UINT index = 0; index < count; ++index)
+    {
+        IMMDevice* device = nullptr;
+        if (FAILED(collection->Item(index, &device)) || device == nullptr)
+            continue;
+        IPropertyStore* store = nullptr;
+        if (SUCCEEDED(device->OpenPropertyStore(STGM_READ, &store)) && store != nullptr)
+        {
+            PROPVARIANT transport;
+            PropVariantInit(&transport);
+            const bool bluetooth = SUCCEEDED(store->GetValue(PKEY_Device_EnumeratorName, &transport))
+                                   && transport.vt == VT_LPWSTR && transport.pwszVal != nullptr
+                                   && wcsstr(transport.pwszVal, L"BTH") != nullptr;
+            PROPVARIANT friendly;
+            PropVariantInit(&friendly);
+            if (bluetooth && SUCCEEDED(store->GetValue(PKEY_Device_FriendlyName, &friendly)) && friendly.vt == VT_LPWSTR)
+            {
+                auto name = wideToUtf8(friendly.pwszVal);
+                if (!name.empty())
+                    names.push_back(std::move(name));
+            }
+            PropVariantClear(&friendly);
+            PropVariantClear(&transport);
+            store->Release();
+        }
+        device->Release();
+    }
+
+    collection->Release();
+    enumerator->Release();
+    if (SUCCEEDED(init))
+        CoUninitialize();
+#endif
+    return names;
+}
+
 std::vector<ExtraInput> enumerateExtraInputs()
 {
     std::vector<ExtraInput> inputs;

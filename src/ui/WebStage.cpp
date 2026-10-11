@@ -107,6 +107,31 @@ juce::WebBrowserComponent::Options WebStage::makeOptions(WebStage& owner)
                                                    owner.audio.setSpeakerPosition(id, x, z);
                                                }
                                                completion({});
+                                           })
+                       .withNativeFunction("setOutputSelected", [&owner](const juce::Array<juce::var>& args, auto completion)
+                                           {
+                                               if (args.size() >= 2)
+                                                   owner.audio.setOutputSelected(args[0].toString().toStdString(), static_cast<bool>(args[1]));
+                                               completion({});
+                                           })
+                       .withNativeFunction("setOutputGain", [&owner](const juce::Array<juce::var>& args, auto completion)
+                                           {
+                                               if (args.size() >= 2)
+                                                   owner.audio.setOutputGain(args[0].toString().toStdString(),
+                                                                              static_cast<float>(static_cast<double>(args[1])));
+                                               completion({});
+                                           })
+                       .withNativeFunction("setOutputMuted", [&owner](const juce::Array<juce::var>& args, auto completion)
+                                           {
+                                               if (args.size() >= 2)
+                                                   owner.audio.setOutputMuted(args[0].toString().toStdString(), static_cast<bool>(args[1]));
+                                               completion({});
+                                           })
+                       .withNativeFunction("applySpeakerPreset", [&owner](const juce::Array<juce::var>& args, auto completion)
+                                           {
+                                               if (!args.isEmpty())
+                                                   owner.audio.applySpeakerPreset(args[0].toString().toStdString());
+                                               completion({});
                                            });
 
 #if JUCE_WINDOWS && JUCE_USE_WIN_WEBVIEW2
@@ -282,8 +307,17 @@ void WebStage::emitFrame()
         auto* item = new juce::DynamicObject();
         item->setProperty("id", juce::String(spot.id));
         item->setProperty("label", juce::String(spot.label));
+        item->setProperty("status", juce::String(spot.status));
         item->setProperty("x", static_cast<double>(spot.x));
         item->setProperty("z", static_cast<double>(spot.z));
+        item->setProperty("gain", static_cast<double>(spot.gain));
+        item->setProperty("level", static_cast<double>(spot.level));
+        item->setProperty("latencyMs", static_cast<double>(spot.latencyMs));
+        item->setProperty("selected", spot.selected);
+        item->setProperty("placed", spot.placed);
+        item->setProperty("muted", spot.muted);
+        item->setProperty("available", spot.available);
+        item->setProperty("bluetooth", spot.bluetooth);
         speakers.add(juce::var(item));
     }
     object->setProperty("speakers", speakers);

@@ -35,6 +35,8 @@ public:
         std::string status;
         float latencyMs = 0.0f;
         float driftMs = 0.0f;
+        float level = 0.0f;
+        bool bluetooth = false;
     };
 
     class Listener
@@ -68,12 +70,22 @@ public:
     {
         std::string id;
         std::string label;
+        std::string status;
         float x = 0.0f;
         float z = 0.0f;
+        float gain = 0.8f;
+        float level = 0.0f;
+        float latencyMs = 0.0f;
+        bool selected = false;
+        bool placed = false;
+        bool muted = false;
+        bool available = false;
+        bool bluetooth = false;
     };
 
     std::vector<SpeakerChoice> getSpeakers() const;
     void setSpeakerPosition(const std::string& id, float x, float z);
+    void applySpeakerPreset(const std::string& name);
 
     void setFile(const juce::File& file);
     juce::String getFileName() const;

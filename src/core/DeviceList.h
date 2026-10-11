@@ -15,6 +15,7 @@ struct AudioEndpoint
     bool input = false;
     bool output = false;
     bool systemAudio = false;
+    bool bluetooth = false;
     std::string id;
 };
 
@@ -68,7 +69,7 @@ inline ListDiff diffEndpoints(const std::vector<AudioEndpoint>& previous, const 
         if (old == nullptr)
             diff.addedIds.push_back(ep.id);
         else if (old->label != ep.label || old->input != ep.input || old->output != ep.output
-                 || old->systemAudio != ep.systemAudio || old->driver != ep.driver)
+                 || old->systemAudio != ep.systemAudio || old->bluetooth != ep.bluetooth || old->driver != ep.driver)
             diff.labelsChanged = true;
     }
 

@@ -11,6 +11,7 @@
       position: absolute;
       left: 16px;
       bottom: 14px;
+      z-index: 3;
       padding: 7px 12px;
       border-radius: 999px;
       background: rgba(6, 4, 14, 0.78);
@@ -24,10 +25,60 @@
       box-shadow: 0 0 0 1px rgba(92, 239, 255, 0.28);
     }
     #caption.away { opacity: 0; }
+    #room-ui { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+    body.fullscreen #room-ui { display: none; }
+    #tray, #focus {
+      pointer-events: auto;
+      position: absolute;
+      color: #e7f7ff;
+      font: 12px/1.35 ui-sans-serif, system-ui, sans-serif;
+      background: rgba(8, 4, 18, 0.82);
+      border: 1px solid rgba(125, 92, 255, 0.45);
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+    }
+    #tray { top: 12px; left: 12px; width: 196px; max-height: calc(100% - 24px); overflow: auto; padding: 10px; }
+    #tray h2, #focus h2 { margin: 0 0 8px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #9be7ff; }
+    #tray-list { display: flex; flex-direction: column; gap: 6px; min-height: 28px; }
+    .tray-item, .preset, #focus-mute {
+      border: 1px solid rgba(61, 240, 255, 0.28);
+      background: rgba(18, 10, 32, 0.9);
+      color: #e7f7ff;
+      border-radius: 8px;
+      padding: 6px 8px;
+      text-align: left;
+      cursor: grab;
+      font: inherit;
+    }
+    .preset, #focus-mute { cursor: pointer; width: 100%; margin-top: 6px; }
+    .tray-item.bluetooth::after { content: "BT"; float: right; color: #ffd56a; font-size: 10px; letter-spacing: 0.08em; }
+    .tray-empty { color: #9b978e; font-size: 11px; }
+    #focus { right: 12px; bottom: 46px; width: 210px; padding: 10px; display: none; }
+    #focus.open { display: block; }
+    #focus-status { color: #b7c4d6; margin-bottom: 8px; }
+    #focus-gain { width: 100%; }
+    #focus-bt { display: none; margin-top: 6px; color: #ffd56a; letter-spacing: 0.08em; font-size: 10px; text-transform: uppercase; }
+    #focus-bt.on { display: block; }
   </style>
 </head>
 <body>
   <div id="caption">Waveform</div>
+  <div id="room-ui">
+    <div id="tray">
+      <h2>Outputs</h2>
+      <div id="tray-list"></div>
+      <button class="preset" type="button" data-preset="stereo">Stereo pair</button>
+      <button class="preset" type="button" data-preset="surround">Surround</button>
+      <button class="preset" type="button" data-preset="desk-garage">Desk + garage</button>
+    </div>
+    <div id="focus" role="region" aria-label="Speaker">
+      <h2 id="focus-name">Speaker</h2>
+      <div id="focus-status"></div>
+      <label>Gain <input id="focus-gain" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="Gain" /></label>
+      <button id="focus-mute" type="button">Mute</button>
+      <div id="focus-bt">Bluetooth</div>
+    </div>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>

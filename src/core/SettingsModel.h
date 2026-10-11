@@ -46,6 +46,64 @@ inline void defaultSpeakerArc(int index, int count, float& x, float& z) noexcept
     z = clampSpeakerCoord(-0.35f - std::cos(angle) * 0.95f);
 }
 
+inline bool isSpeakerPresetName(std::string_view name) noexcept
+{
+    return name == "stereo" || name == "surround" || name == "desk-garage";
+}
+
+// Starting layouts in the room's XZ plane. +Z is toward the camera. The listener marker sits near the origin.
+inline std::vector<SpeakerSpot> speakerPresetPoints(std::string_view name)
+{
+    std::vector<SpeakerSpot> points;
+    auto add = [&points](float x, float z)
+    {
+        SpeakerSpot spot;
+        spot.x = clampSpeakerCoord(x);
+        spot.z = clampSpeakerCoord(z);
+        points.push_back(spot);
+    };
+
+    if (name == "stereo")
+    {
+        add(-1.7f, -0.55f);
+        add(1.7f, -0.55f);
+    }
+    else if (name == "surround")
+    {
+        add(-1.55f, -1.45f);
+        add(1.55f, -1.45f);
+        add(0.0f, -1.95f);
+        add(-1.7f, 1.25f);
+        add(1.7f, 1.25f);
+        add(0.0f, -0.35f);
+    }
+    else if (name == "desk-garage")
+    {
+        add(-0.7f, 1.15f);
+        add(0.7f, 1.15f);
+        add(-2.35f, -2.05f);
+        add(2.35f, -2.05f);
+    }
+    return points;
+}
+
+// Places the first outputs onto that layout. Selection is left alone; this only writes positions.
+inline std::vector<SpeakerSpot> assignSpeakerPreset(std::string_view name, const std::vector<std::string>& ids)
+{
+    std::vector<SpeakerSpot> spots;
+    const auto points = speakerPresetPoints(name);
+    const int count = std::min(static_cast<int>(points.size()), static_cast<int>(ids.size()));
+    for (int i = 0; i < count; ++i)
+    {
+        if (ids[static_cast<size_t>(i)].empty())
+            continue;
+        SpeakerSpot spot = points[static_cast<size_t>(i)];
+        spot.id = ids[static_cast<size_t>(i)];
+        spots.push_back(spot);
+    }
+    return spots;
+}
+
 struct AppSettings
 {
     int version = 1;

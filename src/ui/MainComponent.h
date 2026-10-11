@@ -36,6 +36,9 @@ private:
     void layoutControls();
     void setStage(bool enabled);
     void syncFeedback();
+    void updateOutputChrome();
+    void moveOutputFocus(int delta);
+    void toggleFocusedOutput();
     void sampleLuma(const char* phase);
     void printLumaSummary();
     std::vector<MonitorDesc> collectMonitors() const;
@@ -95,6 +98,7 @@ private:
     std::vector<LumaSample> lumaSamples;
     juce::File demoDir;
     bool buildingUi = false;
+    int outputFocus = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
 };

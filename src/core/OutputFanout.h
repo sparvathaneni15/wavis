@@ -3,10 +3,19 @@
 #include "DriftCorrector.h"
 #include "SpscRingBuffer.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cstdint>
 #include <vector>
+
+// Per-output meter. A louder block jumps immediately; silence falls off so the picture does not stick.
+inline float followOutputLevel(float previous, float blockPeak) noexcept
+{
+    const float peak = std::clamp(blockPeak, 0.0f, 1.0f);
+    const float next = peak >= previous ? peak : previous * 0.94f;
+    return std::clamp(next, 0.0f, 1.0f);
+}
 
 // One input block is copied into a private SPSC ring for every active output.
 // Each output callback pulls from its own ring, so the devices run at once
@@ -48,6 +57,7 @@ public:
     float getDriftMs(int slot) const noexcept;
     uint32_t getUnderrunCount(int slot) const noexcept;
     uint32_t getOverflowCount(int slot) const noexcept;
+    float getOutputLevel(int slot) const noexcept;
     bool isActive(int slot) const noexcept;
 
 private:
@@ -60,6 +70,7 @@ private:
         std::atomic<bool> muted { false };
         std::atomic<float> latencyMs { 0.0f };
         std::atomic<float> driftMs { 0.0f };
+        std::atomic<float> outputLevel { 0.0f };
         std::atomic<uint32_t> underruns { 0 };
         std::atomic<uint32_t> overflows { 0 };
         double outputSampleRate = 48000.0;
@@ -73,6 +84,7 @@ private:
 
     int targetFramesFor(double outputRate) const noexcept;
     void applyGain(Slot& slot, float* interleaved, int frames) noexcept;
+    void noteOutputLevel(Slot& slot, const float* interleaved, int frames) noexcept;
     int discardFrames(Slot& slot, int frames) noexcept;
     int popFrames(Slot& slot, float* interleaved, int frames) noexcept;
 

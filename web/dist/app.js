@@ -20440,6 +20440,92 @@ void main() {
       return new _PolyhedronGeometry(data.vertices, data.indices, data.radius, data.details);
     }
   };
+  var _v0 = /* @__PURE__ */ new Vector3();
+  var _v1$1 = /* @__PURE__ */ new Vector3();
+  var _normal = /* @__PURE__ */ new Vector3();
+  var _triangle = /* @__PURE__ */ new Triangle();
+  var EdgesGeometry = class extends BufferGeometry {
+    constructor(geometry = null, thresholdAngle = 1) {
+      super();
+      this.type = "EdgesGeometry";
+      this.parameters = {
+        geometry,
+        thresholdAngle
+      };
+      if (geometry !== null) {
+        const precisionPoints = 4;
+        const precision = Math.pow(10, precisionPoints);
+        const thresholdDot = Math.cos(DEG2RAD * thresholdAngle);
+        const indexAttr = geometry.getIndex();
+        const positionAttr = geometry.getAttribute("position");
+        const indexCount = indexAttr ? indexAttr.count : positionAttr.count;
+        const indexArr = [0, 0, 0];
+        const vertKeys = ["a", "b", "c"];
+        const hashes = new Array(3);
+        const edgeData = {};
+        const vertices = [];
+        for (let i = 0; i < indexCount; i += 3) {
+          if (indexAttr) {
+            indexArr[0] = indexAttr.getX(i);
+            indexArr[1] = indexAttr.getX(i + 1);
+            indexArr[2] = indexAttr.getX(i + 2);
+          } else {
+            indexArr[0] = i;
+            indexArr[1] = i + 1;
+            indexArr[2] = i + 2;
+          }
+          const { a, b, c } = _triangle;
+          a.fromBufferAttribute(positionAttr, indexArr[0]);
+          b.fromBufferAttribute(positionAttr, indexArr[1]);
+          c.fromBufferAttribute(positionAttr, indexArr[2]);
+          _triangle.getNormal(_normal);
+          hashes[0] = `${Math.round(a.x * precision)},${Math.round(a.y * precision)},${Math.round(a.z * precision)}`;
+          hashes[1] = `${Math.round(b.x * precision)},${Math.round(b.y * precision)},${Math.round(b.z * precision)}`;
+          hashes[2] = `${Math.round(c.x * precision)},${Math.round(c.y * precision)},${Math.round(c.z * precision)}`;
+          if (hashes[0] === hashes[1] || hashes[1] === hashes[2] || hashes[2] === hashes[0]) {
+            continue;
+          }
+          for (let j = 0; j < 3; j++) {
+            const jNext = (j + 1) % 3;
+            const vecHash0 = hashes[j];
+            const vecHash1 = hashes[jNext];
+            const v0 = _triangle[vertKeys[j]];
+            const v1 = _triangle[vertKeys[jNext]];
+            const hash = `${vecHash0}_${vecHash1}`;
+            const reverseHash = `${vecHash1}_${vecHash0}`;
+            if (reverseHash in edgeData && edgeData[reverseHash]) {
+              if (_normal.dot(edgeData[reverseHash].normal) <= thresholdDot) {
+                vertices.push(v0.x, v0.y, v0.z);
+                vertices.push(v1.x, v1.y, v1.z);
+              }
+              edgeData[reverseHash] = null;
+            } else if (!(hash in edgeData)) {
+              edgeData[hash] = {
+                index0: indexArr[j],
+                index1: indexArr[jNext],
+                normal: _normal.clone()
+              };
+            }
+          }
+        }
+        for (const key in edgeData) {
+          if (edgeData[key]) {
+            const { index0, index1 } = edgeData[key];
+            _v0.fromBufferAttribute(positionAttr, index0);
+            _v1$1.fromBufferAttribute(positionAttr, index1);
+            vertices.push(_v0.x, _v0.y, _v0.z);
+            vertices.push(_v1$1.x, _v1$1.y, _v1$1.z);
+          }
+        }
+        this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+      }
+    }
+    copy(source) {
+      super.copy(source);
+      this.parameters = Object.assign({}, source.parameters);
+      return this;
+    }
+  };
   var IcosahedronGeometry = class _IcosahedronGeometry extends PolyhedronGeometry {
     constructor(radius = 1, detail = 0) {
       const t = (1 + Math.sqrt(5)) / 2;
@@ -20552,6 +20638,126 @@ void main() {
     }
     static fromJSON(data) {
       return new _IcosahedronGeometry(data.radius, data.detail);
+    }
+  };
+  var OctahedronGeometry = class _OctahedronGeometry extends PolyhedronGeometry {
+    constructor(radius = 1, detail = 0) {
+      const vertices = [
+        1,
+        0,
+        0,
+        -1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        -1,
+        0,
+        0,
+        0,
+        1,
+        0,
+        0,
+        -1
+      ];
+      const indices = [
+        0,
+        2,
+        4,
+        0,
+        4,
+        3,
+        0,
+        3,
+        5,
+        0,
+        5,
+        2,
+        1,
+        2,
+        5,
+        1,
+        5,
+        3,
+        1,
+        3,
+        4,
+        1,
+        4,
+        2
+      ];
+      super(vertices, indices, radius, detail);
+      this.type = "OctahedronGeometry";
+      this.parameters = {
+        radius,
+        detail
+      };
+    }
+    static fromJSON(data) {
+      return new _OctahedronGeometry(data.radius, data.detail);
+    }
+  };
+  var RingGeometry = class _RingGeometry extends BufferGeometry {
+    constructor(innerRadius = 0.5, outerRadius = 1, thetaSegments = 32, phiSegments = 1, thetaStart = 0, thetaLength = Math.PI * 2) {
+      super();
+      this.type = "RingGeometry";
+      this.parameters = {
+        innerRadius,
+        outerRadius,
+        thetaSegments,
+        phiSegments,
+        thetaStart,
+        thetaLength
+      };
+      thetaSegments = Math.max(3, thetaSegments);
+      phiSegments = Math.max(1, phiSegments);
+      const indices = [];
+      const vertices = [];
+      const normals = [];
+      const uvs = [];
+      let radius = innerRadius;
+      const radiusStep = (outerRadius - innerRadius) / phiSegments;
+      const vertex2 = new Vector3();
+      const uv = new Vector2();
+      for (let j = 0; j <= phiSegments; j++) {
+        for (let i = 0; i <= thetaSegments; i++) {
+          const segment = thetaStart + i / thetaSegments * thetaLength;
+          vertex2.x = radius * Math.cos(segment);
+          vertex2.y = radius * Math.sin(segment);
+          vertices.push(vertex2.x, vertex2.y, vertex2.z);
+          normals.push(0, 0, 1);
+          uv.x = (vertex2.x / outerRadius + 1) / 2;
+          uv.y = (vertex2.y / outerRadius + 1) / 2;
+          uvs.push(uv.x, uv.y);
+        }
+        radius += radiusStep;
+      }
+      for (let j = 0; j < phiSegments; j++) {
+        const thetaSegmentLevel = j * (thetaSegments + 1);
+        for (let i = 0; i < thetaSegments; i++) {
+          const segment = i + thetaSegmentLevel;
+          const a = segment;
+          const b = segment + thetaSegments + 1;
+          const c = segment + thetaSegments + 2;
+          const d = segment + 1;
+          indices.push(a, b, d);
+          indices.push(b, c, d);
+        }
+      }
+      this.setIndex(indices);
+      this.setAttribute("position", new Float32BufferAttribute(vertices, 3));
+      this.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+      this.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    }
+    copy(source) {
+      super.copy(source);
+      this.parameters = Object.assign({}, source.parameters);
+      return this;
+    }
+    static fromJSON(data) {
+      return new _RingGeometry(data.innerRadius, data.outerRadius, data.thetaSegments, data.phiSegments, data.thetaStart, data.thetaLength);
     }
   };
   var SphereGeometry = class _SphereGeometry extends BufferGeometry {
@@ -22534,6 +22740,8 @@ void main() {
       maxBrightness: 1.05,
       maxParticleProduct: 280,
       addCap: 1.15,
+      maxRingOpacity: 0.38,
+      maxRingScale: 1.25,
       luminanceCeiling: 0.48,
       luminanceRelease: 0.8,
       luminanceFloorGain: 0.35
@@ -22810,8 +23018,34 @@ void main() {
   var speakerRoot = new Group();
   worldScene.add(speakerRoot);
   var speakerById = /* @__PURE__ */ new Map();
+  var speakerState = /* @__PURE__ */ new Map();
   var dragId = null;
+  var dragMoved = false;
+  var pressX = 0;
+  var pressY = 0;
+  var trayDragId = null;
+  var hoverId = null;
+  var focusId = null;
   var demoSpeakers = [];
+  var currentSpeakers = [];
+  var selectionOverride = /* @__PURE__ */ new Map();
+  var placementOverride = /* @__PURE__ */ new Map();
+  var listenerMarker = new Group();
+  listenerMarker.userData.listener = true;
+  var listenerGem = new Mesh(
+    new OctahedronGeometry(0.14, 0),
+    new MeshBasicMaterial({ color: 16048808, toneMapped: false })
+  );
+  listenerGem.position.y = 0.18;
+  var listenerRing = new Mesh(
+    new RingGeometry(0.22, 0.3, 28),
+    new MeshBasicMaterial({ color: 16048808, side: DoubleSide, transparent: true, opacity: 0.85, toneMapped: false })
+  );
+  listenerRing.rotation.x = -Math.PI / 2;
+  listenerRing.position.y = 0.02;
+  listenerMarker.add(listenerGem, listenerRing);
+  listenerMarker.position.set(0, room.floorY, 0.15);
+  worldScene.add(listenerMarker);
   function clampRoom(value) {
     const limit = room.speakerHalf;
     if (!Number.isFinite(value))
@@ -22838,6 +23072,7 @@ void main() {
     sprite.userData.texture = texture;
     return sprite;
   }
+  listenerMarker.add(makeLabel("Listener"));
   function disposeSpeaker(group) {
     group.traverse((child) => {
       if (child.geometry)
@@ -22852,34 +23087,81 @@ void main() {
         child.userData.texture.dispose();
     });
   }
+  function makeRing() {
+    const mesh = new Mesh(
+      new RingGeometry(0.34, 0.4, 28),
+      new MeshBasicMaterial({
+        color: 4034208,
+        transparent: true,
+        opacity: 0,
+        side: DoubleSide,
+        depthWrite: false,
+        toneMapped: false
+      })
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.y = 0.03;
+    mesh.visible = false;
+    return mesh;
+  }
   function makeCabinet(id, label) {
     const group = new Group();
     group.userData.speakerId = id;
     group.userData.label = label;
+    group.userData.wasSelected = false;
+    group.userData.burst = 0;
+    group.userData.fade = 0;
+    group.userData.levelState = makeDynamics();
     const body = new Mesh(
       new BoxGeometry(room.cabinet.w, room.cabinet.h, room.cabinet.d),
-      new MeshBasicMaterial({ color: 1707042, toneMapped: false })
+      new MeshBasicMaterial({ color: 2761779, wireframe: true, transparent: true, opacity: 0.55, toneMapped: false })
     );
     body.position.y = room.cabinet.h * 0.5;
     const woofer = new Mesh(
       new CircleGeometry(0.15, 18),
-      new MeshBasicMaterial({ color: 16722902, toneMapped: false })
+      new MeshBasicMaterial({ color: 5917286, toneMapped: false })
     );
     woofer.position.set(0, room.cabinet.h * 0.3, room.cabinet.d * 0.51);
     const tweeter = new Mesh(
       new CircleGeometry(0.07, 16),
-      new MeshBasicMaterial({ color: 4059391, toneMapped: false })
+      new MeshBasicMaterial({ color: 6978184, toneMapped: false })
     );
     tweeter.position.set(0, room.cabinet.h * 0.62, room.cabinet.d * 0.51);
-    group.add(body, woofer, tweeter, makeLabel(label));
+    const outline = new LineSegments(
+      new EdgesGeometry(new BoxGeometry(room.cabinet.w * 1.08, room.cabinet.h * 1.08, room.cabinet.d * 1.08)),
+      new LineBasicMaterial({ color: 9428991, transparent: true, opacity: 0, toneMapped: false })
+    );
+    outline.position.y = room.cabinet.h * 0.5;
+    outline.visible = false;
+    const bluetoothMark = new Mesh(
+      new SphereGeometry(0.05, 10, 8),
+      new MeshBasicMaterial({ color: 16766314, toneMapped: false })
+    );
+    bluetoothMark.position.set(room.cabinet.w * 0.28, room.cabinet.h * 0.92, 0);
+    bluetoothMark.visible = false;
+    const rings = [makeRing(), makeRing(), makeRing()];
+    const burstRing = makeRing();
+    group.userData.body = body;
+    group.userData.woofer = woofer;
+    group.userData.tweeter = tweeter;
+    group.userData.outline = outline;
+    group.userData.bluetoothMark = bluetoothMark;
+    group.userData.rings = rings;
+    group.userData.burstRing = burstRing;
+    group.add(body, woofer, tweeter, outline, bluetoothMark, burstRing, ...rings, makeLabel(label));
     return group;
+  }
+  function spotPlaced(spot) {
+    return !spot || spot.placed !== false;
   }
   function syncSpeakers(list) {
     const next = /* @__PURE__ */ new Set();
+    speakerState.clear();
     for (const spot of list) {
-      if (!spot || typeof spot.id !== "string" || spot.id.length === 0)
+      if (!spot || typeof spot.id !== "string" || spot.id.length === 0 || !spotPlaced(spot))
         continue;
       next.add(spot.id);
+      speakerState.set(spot.id, spot);
       let group = speakerById.get(spot.id);
       const label = typeof spot.label === "string" && spot.label.length ? spot.label : spot.id;
       if (!group) {
@@ -22899,8 +23181,9 @@ void main() {
         group.add(makeLabel(label));
         group.userData.label = label;
       }
-      if (dragId !== spot.id) {
-        group.position.set(clampRoom(Number(spot.x)), room.floorY, clampRoom(Number(spot.z)));
+      if (dragId !== spot.id && trayDragId !== spot.id) {
+        group.position.x = clampRoom(Number(spot.x));
+        group.position.z = clampRoom(Number(spot.z));
       }
     }
     for (const [id, group] of speakerById) {
@@ -22911,6 +23194,73 @@ void main() {
       speakerRoot.remove(group);
       disposeSpeaker(group);
       speakerById.delete(id);
+    }
+  }
+  function animateSpeakers(dt) {
+    const ringCap = VISUAL.dynamics.maxRingOpacity;
+    const scaleCap = VISUAL.dynamics.maxRingScale;
+    const shownRings = qualityHigh ? 3 : 1;
+    for (const [id, group] of speakerById) {
+      const spot = speakerState.get(id) || {};
+      const selected = !!spot.selected;
+      const hover = hoverId === id || focusId === id;
+      const lift = !selected && hover && dragId !== id ? 0.16 : 0;
+      if (dragId !== id)
+        group.position.y = room.floorY + lift;
+      const body = group.userData.body;
+      const woofer = group.userData.woofer;
+      const tweeter = group.userData.tweeter;
+      body.material.wireframe = !selected;
+      body.material.transparent = !selected;
+      body.material.opacity = selected ? 1 : 0.45;
+      body.material.color.set(selected ? 1191992 : 3814212);
+      woofer.material.color.set(selected ? 12852618 : 6049126);
+      tweeter.material.color.set(selected ? 1747140 : 6714496);
+      woofer.visible = selected;
+      tweeter.visible = selected;
+      group.userData.bluetoothMark.visible = !!spot.bluetooth;
+      const outline = group.userData.outline;
+      outline.visible = hover;
+      outline.material.opacity = hover ? 0.7 : 0;
+      if (group.userData.wasSelected !== selected) {
+        if (selected)
+          group.userData.burst = 1;
+        else
+          group.userData.fade = 1;
+        group.userData.wasSelected = selected;
+      }
+      const drive = compress(Math.max(0, Number(spot.level) || 0), group.userData.levelState, dt);
+      const pulse = 0.65 + 0.35 * Math.sin(simTime * (1.6 + drive * 5));
+      const rings = group.userData.rings;
+      for (let i = 0; i < rings.length; ++i) {
+        const ring = rings[i];
+        const show = selected && i < shownRings && group.userData.burst <= 0;
+        ring.visible = show;
+        if (!show)
+          continue;
+        const scale = Math.min(scaleCap, 0.42 + i * 0.28 + drive * 0.55 * pulse);
+        ring.scale.setScalar(scale);
+        ring.material.opacity = Math.min(ringCap, (0.08 + drive * 0.22) * (1 - i * 0.22) * lumaGain);
+        ring.material.color.set(i % 2 === 0 ? 4034208 : 11029912);
+      }
+      const burst = group.userData.burstRing;
+      if (group.userData.burst > 0) {
+        group.userData.burst = Math.max(0, group.userData.burst - dt / 0.42);
+        burst.visible = qualityHigh;
+        const age2 = 1 - group.userData.burst;
+        burst.scale.setScalar(Math.min(scaleCap, 0.35 + age2 * 1.15));
+        burst.material.opacity = Math.min(ringCap, (1 - age2) * 0.4 * lumaGain);
+        burst.material.color.set(4059391);
+      } else if (group.userData.fade > 0) {
+        group.userData.fade = Math.max(0, group.userData.fade - dt / 0.55);
+        burst.visible = qualityHigh;
+        const age2 = 1 - group.userData.fade;
+        burst.scale.setScalar(Math.min(scaleCap, 0.4 + age2 * 0.9));
+        burst.material.opacity = Math.min(ringCap, group.userData.fade * 0.28 * lumaGain);
+        burst.material.color.set(9133311);
+      } else {
+        burst.visible = false;
+      }
     }
   }
   var raycaster = new Raycaster();
@@ -22924,25 +23274,59 @@ void main() {
     pointerNdc.x = (event.clientX - rect.left) / width * 2 - 1;
     pointerNdc.y = -((event.clientY - rect.top) / height) * 2 + 1;
   }
-  renderer.domElement.addEventListener("pointerdown", (event) => {
-    if (mode !== SCENE)
-      return;
+  function speakerHit(event) {
     pointerToNdc(event);
     raycaster.setFromCamera(pointerNdc, perspective);
     const hits = raycaster.intersectObjects(speakerRoot.children, true);
-    if (!hits.length)
+    for (const hit of hits) {
+      let object = hit.object;
+      while (object && !object.userData.speakerId && !object.userData.listener)
+        object = object.parent;
+      if (object && object.userData.listener)
+        continue;
+      if (object && object.userData.speakerId)
+        return object.userData.speakerId;
+    }
+    return null;
+  }
+  function rememberPlacement(id, x, z) {
+    placementOverride.set(id, { x, z });
+    demoSpeakers = demoSpeakers.map((spot) => spot && spot.id === id ? { ...spot, x, z, placed: true } : spot);
+    callNative("placeSpeaker", [id, x, z]);
+  }
+  function toggleSpeaker(id) {
+    const spot = currentSpeakers.find((item) => item && item.id === id);
+    const next = !(spot && spot.selected);
+    selectionOverride.set(id, next);
+    demoSpeakers = demoSpeakers.map((item) => item && item.id === id ? { ...item, selected: next } : item);
+    focusId = id;
+    callNative("setOutputSelected", [id, next]);
+    return next;
+  }
+  renderer.domElement.addEventListener("pointerdown", (event) => {
+    if (mode !== SCENE)
       return;
-    let object = hits[0].object;
-    while (object && !object.userData.speakerId)
-      object = object.parent;
-    if (!object || !object.userData.speakerId)
+    const id = speakerHit(event);
+    if (!id)
       return;
-    dragId = object.userData.speakerId;
+    dragId = id;
+    dragMoved = false;
+    pressX = event.clientX;
+    pressY = event.clientY;
+    focusId = id;
     if (renderer.domElement.setPointerCapture)
       renderer.domElement.setPointerCapture(event.pointerId);
   });
   renderer.domElement.addEventListener("pointermove", (event) => {
+    if (mode === SCENE && !dragId && !trayDragId) {
+      hoverId = speakerHit(event);
+      return;
+    }
     if (!dragId || mode !== SCENE)
+      return;
+    if (Math.hypot(event.clientX - pressX, event.clientY - pressY) > 4)
+      dragMoved = true;
+    if (!dragMoved)
       return;
     pointerToNdc(event);
     raycaster.setFromCamera(pointerNdc, perspective);
@@ -22951,24 +23335,36 @@ void main() {
     const group = speakerById.get(dragId);
     if (!group)
       return;
-    group.position.set(clampRoom(floorHit.x), room.floorY, clampRoom(floorHit.z));
+    group.position.x = clampRoom(floorHit.x);
+    group.position.z = clampRoom(floorHit.z);
   });
   function finishSpeakerDrag() {
     if (!dragId)
       return;
-    const group = speakerById.get(dragId);
     const id = dragId;
+    const group = speakerById.get(id);
     dragId = null;
     if (!group)
       return;
+    if (!dragMoved) {
+      toggleSpeaker(id);
+      return;
+    }
     const x = clampRoom(group.position.x);
     const z = clampRoom(group.position.z);
-    group.position.set(x, room.floorY, z);
-    demoSpeakers = demoSpeakers.map((spot) => spot.id === id ? { ...spot, x, z } : spot);
-    callNative("placeSpeaker", [id, x, z]);
+    group.position.x = x;
+    group.position.z = z;
+    rememberPlacement(id, x, z);
   }
   renderer.domElement.addEventListener("pointerup", finishSpeakerDrag);
-  renderer.domElement.addEventListener("pointercancel", finishSpeakerDrag);
+  renderer.domElement.addEventListener("pointercancel", () => {
+    dragId = null;
+    trayDragId = null;
+  });
+  renderer.domElement.addEventListener("pointerleave", () => {
+    if (!dragId)
+      hoverId = null;
+  });
   var gradient = VISUAL.gradient;
   var volumeMaterial = new ShaderMaterial({
     side: BackSide,
@@ -23421,8 +23817,31 @@ void main() {
       mode = frame2.mode;
     const nativeSpeakers = frame2 && Array.isArray(frame2.speakers) ? frame2.speakers : [];
     const nativeIds = new Set(nativeSpeakers.map((spot) => spot && spot.id));
-    const incoming = demoSpeakers.length ? nativeSpeakers.concat(demoSpeakers.filter((spot) => spot && !nativeIds.has(spot.id))) : nativeSpeakers;
+    const incoming = demoSpeakers.length ? nativeSpeakers.concat(demoSpeakers.filter((spot) => spot && !nativeIds.has(spot.id))) : nativeSpeakers.slice();
+    for (const spot of incoming) {
+      if (!spot || !spot.id)
+        continue;
+      if (selectionOverride.has(spot.id)) {
+        if (!!spot.selected === selectionOverride.get(spot.id))
+          selectionOverride.delete(spot.id);
+        else
+          spot.selected = selectionOverride.get(spot.id);
+      }
+      if (placementOverride.has(spot.id)) {
+        const placed = placementOverride.get(spot.id);
+        if (spot.placed && Math.abs(Number(spot.x) - placed.x) < 0.05 && Math.abs(Number(spot.z) - placed.z) < 0.05)
+          placementOverride.delete(spot.id);
+        else {
+          spot.placed = true;
+          spot.x = placed.x;
+          spot.z = placed.z;
+        }
+      }
+    }
+    currentSpeakers = incoming;
     syncSpeakers(incoming);
+    animateSpeakers(dt);
+    updateRoomUi(incoming, !!(frame2 && frame2.fullscreen));
     if (caption) {
       caption.textContent = MODE_LABEL[mode] || "Waveform";
       caption.classList.toggle("away", !!(frame2 && frame2.fullscreen));
@@ -23556,9 +23975,22 @@ void main() {
   }
   window.addEventListener("resize", resize);
   window.addEventListener("keydown", (event) => {
+    if (event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA"))
+      return;
     if (event.key === "Escape") {
       event.preventDefault();
       callNative("exitFullscreen");
+      return;
+    }
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      window.wavisFocusStep(1);
+      event.preventDefault();
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      window.wavisFocusStep(-1);
+      event.preventDefault();
+    } else if ((event.key === "Enter" || event.key === " ") && focusId) {
+      toggleSpeaker(focusId);
+      event.preventDefault();
     }
   }, true);
   window.wavisCapture = () => renderer.domElement.toDataURL("image/png");
@@ -23580,21 +24012,145 @@ void main() {
   window.wavisMoveSpeaker = (id, x, z) => {
     const nx = clampRoom(Number(x));
     const nz = clampRoom(Number(z));
+    rememberPlacement(id, nx, nz);
     let found = false;
     demoSpeakers = demoSpeakers.map((spot) => {
       if (!spot || spot.id !== id)
         return spot;
       found = true;
-      return { ...spot, x: nx, z: nz };
+      return { ...spot, x: nx, z: nz, placed: true };
     });
     if (!found)
-      demoSpeakers.push({ id, label: id, x: nx, z: nz });
+      demoSpeakers.push({ id, label: id, x: nx, z: nz, placed: true, selected: true });
     const group = speakerById.get(id);
-    if (group)
-      group.position.set(nx, room.floorY, nz);
-    callNative("placeSpeaker", [id, nx, nz]);
+    if (group) {
+      group.position.x = nx;
+      group.position.z = nz;
+    }
     return nx + "," + nz;
   };
+  window.wavisToggleFocused = () => {
+    if (!focusId)
+      return "";
+    toggleSpeaker(focusId);
+    return focusId;
+  };
+  window.wavisFocusStep = (delta) => {
+    const placed = currentSpeakers.filter((spot) => spot && spotPlaced(spot));
+    if (!placed.length)
+      return "";
+    const index = Math.max(0, placed.findIndex((spot) => spot.id === focusId));
+    const next = placed[(index + (delta >= 0 ? 1 : placed.length - 1)) % placed.length];
+    focusId = next.id;
+    return focusId;
+  };
+  window.wavisRoomState = () => {
+    const placed = currentSpeakers.filter((spot) => spot && spotPlaced(spot));
+    const selected = placed.filter((spot) => spot.selected);
+    const tray = currentSpeakers.filter((spot) => spot && spot.placed === false);
+    return "placed=" + placed.length + " selected=" + selected.length + " tray=" + tray.length;
+  };
+  var trayList = document.getElementById("tray-list");
+  var focusPanel = document.getElementById("focus");
+  var focusName = document.getElementById("focus-name");
+  var focusStatus = document.getElementById("focus-status");
+  var focusGain = document.getElementById("focus-gain");
+  var focusMute = document.getElementById("focus-mute");
+  var focusBt = document.getElementById("focus-bt");
+  var traySignature = "";
+  function updateRoomUi(list, fullscreen) {
+    document.body.classList.toggle("fullscreen", !!fullscreen);
+    if (!trayList)
+      return;
+    const tray = list.filter((spot) => spot && spot.placed === false);
+    const signature = tray.map((spot) => spot.id + "|" + spot.label + "|" + (spot.bluetooth ? 1 : 0) + "|" + spot.status).join(";");
+    if (signature !== traySignature) {
+      traySignature = signature;
+      trayList.replaceChildren();
+      if (!tray.length) {
+        const empty = document.createElement("div");
+        empty.className = "tray-empty";
+        empty.textContent = "Every output is in the room.";
+        trayList.appendChild(empty);
+      }
+      for (const spot of tray) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "tray-item" + (spot.bluetooth ? " bluetooth" : "");
+        button.dataset.speakerId = spot.id;
+        button.textContent = spot.label || spot.id;
+        button.setAttribute("aria-label", "Drag " + button.textContent + " into the room");
+        button.addEventListener("pointerdown", (event) => {
+          trayDragId = spot.id;
+          focusId = spot.id;
+          event.preventDefault();
+        });
+        trayList.appendChild(button);
+      }
+    }
+    const focused = list.find((spot) => spot && spot.id === focusId && spotPlaced(spot));
+    if (focusPanel)
+      focusPanel.classList.toggle("open", !!focused && !fullscreen);
+    if (!focused)
+      return;
+    if (focusName)
+      focusName.textContent = focused.label || focused.id;
+    if (focusStatus) {
+      const latency = Number(focused.latencyMs) || 0;
+      focusStatus.textContent = (focused.status || "Off") + " \xB7 " + Math.round(latency) + " ms";
+    }
+    if (focusGain && document.activeElement !== focusGain)
+      focusGain.value = String(Math.max(0, Math.min(1, Number(focused.gain) || 0)));
+    if (focusMute)
+      focusMute.textContent = focused.muted ? "Muted" : "Mute";
+    if (focusBt)
+      focusBt.classList.toggle("on", !!focused.bluetooth);
+  }
+  window.addEventListener("pointerup", (event) => {
+    if (!trayDragId)
+      return;
+    const id = trayDragId;
+    trayDragId = null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+    if (!inside)
+      return;
+    let x = 0;
+    let z = -0.4;
+    if (mode === SCENE) {
+      pointerToNdc(event);
+      raycaster.setFromCamera(pointerNdc, perspective);
+      if (!raycaster.ray.intersectPlane(floorPlane, floorHit))
+        return;
+      x = floorHit.x;
+      z = floorHit.z;
+    } else {
+      x = -1.5 + speakerById.size % 4;
+    }
+    rememberPlacement(id, clampRoom(x), clampRoom(z));
+  });
+  document.querySelectorAll(".preset").forEach((button) => {
+    button.addEventListener("click", () => {
+      const name = button.getAttribute("data-preset");
+      if (name)
+        callNative("applySpeakerPreset", [name]);
+    });
+  });
+  if (focusGain) {
+    focusGain.addEventListener("input", () => {
+      if (!focusId)
+        return;
+      callNative("setOutputGain", [focusId, Number(focusGain.value)]);
+    });
+  }
+  if (focusMute) {
+    focusMute.addEventListener("click", () => {
+      const spot = currentSpeakers.find((item) => item && item.id === focusId);
+      if (!spot)
+        return;
+      callNative("setOutputMuted", [focusId, !spot.muted]);
+    });
+  }
   var backend = window.__JUCE__ && window.__JUCE__.backend;
   if (backend && typeof backend.addEventListener === "function") {
     backend.addEventListener("wavisFrame", (payload) => {

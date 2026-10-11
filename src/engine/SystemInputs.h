@@ -17,6 +17,10 @@ struct ExtraInput
 
 std::vector<ExtraInput> enumerateExtraInputs();
 
+// Friendly names of render endpoints whose OS enumerator is a Bluetooth transport.
+// Empty on platforms where that query is not available.
+std::vector<std::string> bluetoothRenderNames();
+
 bool isExtraInputDriver(const std::string& driver);
 
 class ExtraInputStream

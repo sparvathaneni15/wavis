@@ -104,6 +104,14 @@ public:
 
     const std::string& getId() const { return choice.id; }
 
+    void setKeyFocus(bool focused)
+    {
+        if (keyFocus == focused)
+            return;
+        keyFocus = focused;
+        repaint();
+    }
+
     std::function<void(bool)> onSelected;
     std::function<void(float)> onGain;
     std::function<void(bool)> onMute;
@@ -124,6 +132,11 @@ public:
     {
         g.setColour(juce::Colour(0xff1a1d25));
         g.fillRoundedRectangle(getLocalBounds().toFloat().reduced(2.0f), 8.0f);
+        if (keyFocus)
+        {
+            g.setColour(juce::Colour(0xff5cefff));
+            g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(2.0f), 8.0f, 1.5f);
+        }
     }
 
 private:
@@ -133,6 +146,7 @@ private:
     juce::Slider gain { juce::Slider::LinearHorizontal, juce::Slider::NoTextBox };
     juce::TextButton mute;
     juce::Label detail;
+    bool keyFocus = false;
 };
 
 class MainComponent::StageWindow : public juce::DocumentWindow
@@ -268,11 +282,13 @@ MainComponent::MainComponent() : visual(engine)
 
     viewport.setViewedComponent(&outputList, false);
     viewport.setScrollBarsShown(true, false);
+    visual.setBackendChanged([this] { updateOutputChrome(); });
     engine.addListener(this);
     rebuildInputs();
     rebuildOutputs();
     refreshDisplays();
     refreshStats();
+    updateOutputChrome();
     startTimerHz(15);
     setSize(1200, 740);
 }
@@ -385,7 +401,10 @@ void MainComponent::refreshStats()
                 ++selected;
         }
     }
-    outputCount.setText(juce::String(selected) + " selected", juce::dontSendNotification);
+    if (visual.isWebView())
+        outputCount.setText("in the picture", juce::dontSendNotification);
+    else
+        outputCount.setText(juce::String(selected) + " selected", juce::dontSendNotification);
     status.setText(engine.getStatusLine(), juce::dontSendNotification);
     backendLabel.setText(visual.backendLabel(), juce::dontSendNotification);
     fileName.setText(engine.getFileName(), juce::dontSendNotification);
@@ -396,6 +415,60 @@ void MainComponent::refreshStats()
     const bool busy = engine.isRunning();
     startButton.setEnabled(!busy);
     stopButton.setEnabled(busy);
+}
+
+void MainComponent::updateOutputChrome()
+{
+    const bool web = visual.isWebView();
+    viewport.setVisible(!web);
+    outputLabel.setText(web ? "Speakers" : "Outputs", juce::dontSendNotification);
+    if (web)
+        outputCount.setText("in the picture", juce::dontSendNotification);
+    layoutControls();
+}
+
+void MainComponent::moveOutputFocus(int delta)
+{
+    const int count = outputList.getNumChildComponents();
+    if (count <= 0 || visual.isWebView())
+        return;
+    outputFocus = (outputFocus + delta + count) % count;
+    int index = 0;
+    for (auto* child : outputList.getChildren())
+    {
+        if (auto* row = dynamic_cast<OutputRow*>(child))
+            row->setKeyFocus(index == outputFocus);
+        ++index;
+    }
+}
+
+void MainComponent::toggleFocusedOutput()
+{
+    if (visual.isWebView())
+    {
+        visual.evaluate("window.wavisToggleFocused ? window.wavisToggleFocused() : ''", {});
+        return;
+    }
+    int index = 0;
+    for (auto* child : outputList.getChildren())
+    {
+        auto* row = dynamic_cast<OutputRow*>(child);
+        if (row == nullptr)
+            continue;
+        if (index == outputFocus)
+        {
+            const auto outputs = engine.getOutputs();
+            for (const auto& output : outputs)
+            {
+                if (output.id == row->getId())
+                {
+                    engine.setOutputSelected(output.id, !output.selected);
+                    return;
+                }
+            }
+        }
+        ++index;
+    }
 }
 
 void MainComponent::syncFeedback()
@@ -455,8 +528,10 @@ void MainComponent::timerCallback()
     else if (demoShots == 4 && demoTicks >= 165 && !demoRoomShown)
     {
         visual.evaluate("window.wavisDemoSpeakers&&window.wavisDemoSpeakers(["
-                        "{id:'demo-left',label:'Left',x:-1.7,z:-0.25},"
-                        "{id:'demo-right',label:'Right',x:1.6,z:-0.25}])",
+                        "{id:'demo-left',label:'Left',x:-1.7,z:-0.4,placed:true,selected:true,status:'Live',latencyMs:48,level:0.72,gain:0.8},"
+                        "{id:'demo-right',label:'Right',x:1.6,z:-0.4,placed:true,selected:true,status:'Live',latencyMs:51,level:0.28,gain:0.8},"
+                        "{id:'demo-rear',label:'Rear',x:0.15,z:1.35,placed:true,selected:false,status:'Off',latencyMs:0,level:0,gain:0.5},"
+                        "{id:'demo-buds',label:'Buds',placed:false,selected:false,status:'Off',bluetooth:true,gain:0.8}])",
                         {});
         demoRoomShown = true;
     }
@@ -466,6 +541,11 @@ void MainComponent::timerCallback()
                         [](juce::String text)
                         {
                             std::cout << "WAVIS_SPEAKER " << text << "\n";
+                        });
+        visual.evaluate("window.wavisRoomState?window.wavisRoomState():''",
+                        [](juce::String text)
+                        {
+                            std::cout << "WAVIS_ROOM " << text << "\n";
                         });
         demoRoomMoved = true;
     }
@@ -755,7 +835,10 @@ void MainComponent::layoutControls()
     }
     status.setBounds(area.removeFromBottom(40));
     area.removeFromTop(4);
-    viewport.setBounds(area);
+    if (viewport.isVisible())
+        viewport.setBounds(area);
+    else
+        viewport.setBounds(0, 0, 0, 0);
 }
 
 bool MainComponent::keyPressed(const juce::KeyPress& key)
@@ -773,6 +856,31 @@ bool MainComponent::keyPressed(const juce::KeyPress& key)
     if (key.getTextCharacter() == '3')
     {
         modes.setSelectedId(3);
+        return true;
+    }
+    if (visual.isWebView() && (key == juce::KeyPress::leftKey || key == juce::KeyPress::upKey))
+    {
+        visual.evaluate("window.wavisFocusStep?window.wavisFocusStep(-1):''", {});
+        return true;
+    }
+    if (visual.isWebView() && (key == juce::KeyPress::rightKey || key == juce::KeyPress::downKey))
+    {
+        visual.evaluate("window.wavisFocusStep?window.wavisFocusStep(1):''", {});
+        return true;
+    }
+    if (!visual.isWebView() && key == juce::KeyPress::upKey)
+    {
+        moveOutputFocus(-1);
+        return true;
+    }
+    if (!visual.isWebView() && key == juce::KeyPress::downKey)
+    {
+        moveOutputFocus(1);
+        return true;
+    }
+    if (key == juce::KeyPress::spaceKey || key == juce::KeyPress::returnKey)
+    {
+        toggleFocusedOutput();
         return true;
     }
     if (key.getTextCharacter() == 'f' || key.getTextCharacter() == 'F')

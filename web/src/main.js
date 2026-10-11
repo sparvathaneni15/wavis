@@ -30,6 +30,8 @@ const VISUAL = {
     maxBrightness: 1.05,
     maxParticleProduct: 280,
     addCap: 1.15,
+    maxRingOpacity: 0.38,
+    maxRingScale: 1.25,
     luminanceCeiling: 0.48,
     luminanceRelease: 0.8,
     luminanceFloorGain: 0.35,
@@ -331,8 +333,35 @@ addEdge(room.half, room.floorY, room.half, room.half, top, room.half);
 const speakerRoot = new THREE.Group();
 worldScene.add(speakerRoot);
 const speakerById = new Map();
+const speakerState = new Map();
 let dragId = null;
+let dragMoved = false;
+let pressX = 0;
+let pressY = 0;
+let trayDragId = null;
+let hoverId = null;
+let focusId = null;
 let demoSpeakers = [];
+let currentSpeakers = [];
+const selectionOverride = new Map();
+const placementOverride = new Map();
+
+const listenerMarker = new THREE.Group();
+listenerMarker.userData.listener = true;
+const listenerGem = new THREE.Mesh(
+  new THREE.OctahedronGeometry(0.14, 0),
+  new THREE.MeshBasicMaterial({ color: 0xf4e2a8, toneMapped: false })
+);
+listenerGem.position.y = 0.18;
+const listenerRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.22, 0.3, 28),
+  new THREE.MeshBasicMaterial({ color: 0xf4e2a8, side: THREE.DoubleSide, transparent: true, opacity: 0.85, toneMapped: false })
+);
+listenerRing.rotation.x = -Math.PI / 2;
+listenerRing.position.y = 0.02;
+listenerMarker.add(listenerGem, listenerRing);
+listenerMarker.position.set(0, room.floorY, 0.15);
+worldScene.add(listenerMarker);
 
 function clampRoom(value) {
   const limit = room.speakerHalf;
@@ -362,6 +391,8 @@ function makeLabel(text) {
   return sprite;
 }
 
+listenerMarker.add(makeLabel("Listener"));
+
 function disposeSpeaker(group) {
   group.traverse((child) => {
     if (child.geometry)
@@ -377,35 +408,84 @@ function disposeSpeaker(group) {
   });
 }
 
+function makeRing() {
+  const mesh = new THREE.Mesh(
+    new THREE.RingGeometry(0.34, 0.4, 28),
+    new THREE.MeshBasicMaterial({
+      color: 0x3d8ea0,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      toneMapped: false,
+    })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.y = 0.03;
+  mesh.visible = false;
+  return mesh;
+}
+
 function makeCabinet(id, label) {
   const group = new THREE.Group();
   group.userData.speakerId = id;
   group.userData.label = label;
+  group.userData.wasSelected = false;
+  group.userData.burst = 0;
+  group.userData.fade = 0;
+  group.userData.levelState = makeDynamics();
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(room.cabinet.w, room.cabinet.h, room.cabinet.d),
-    new THREE.MeshBasicMaterial({ color: 0x1a0c22, toneMapped: false })
+    new THREE.MeshBasicMaterial({ color: 0x2a2433, wireframe: true, transparent: true, opacity: 0.55, toneMapped: false })
   );
   body.position.y = room.cabinet.h * 0.5;
   const woofer = new THREE.Mesh(
     new THREE.CircleGeometry(0.15, 18),
-    new THREE.MeshBasicMaterial({ color: 0xff2bd6, toneMapped: false })
+    new THREE.MeshBasicMaterial({ color: 0x5a4a66, toneMapped: false })
   );
   woofer.position.set(0, room.cabinet.h * 0.3, room.cabinet.d * 0.51);
   const tweeter = new THREE.Mesh(
     new THREE.CircleGeometry(0.07, 16),
-    new THREE.MeshBasicMaterial({ color: 0x3df0ff, toneMapped: false })
+    new THREE.MeshBasicMaterial({ color: 0x6a7a88, toneMapped: false })
   );
   tweeter.position.set(0, room.cabinet.h * 0.62, room.cabinet.d * 0.51);
-  group.add(body, woofer, tweeter, makeLabel(label));
+  const outline = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(room.cabinet.w * 1.08, room.cabinet.h * 1.08, room.cabinet.d * 1.08)),
+    new THREE.LineBasicMaterial({ color: 0x8fdfff, transparent: true, opacity: 0.0, toneMapped: false })
+  );
+  outline.position.y = room.cabinet.h * 0.5;
+  outline.visible = false;
+  const bluetoothMark = new THREE.Mesh(
+    new THREE.SphereGeometry(0.05, 10, 8),
+    new THREE.MeshBasicMaterial({ color: 0xffd56a, toneMapped: false })
+  );
+  bluetoothMark.position.set(room.cabinet.w * 0.28, room.cabinet.h * 0.92, 0);
+  bluetoothMark.visible = false;
+  const rings = [makeRing(), makeRing(), makeRing()];
+  const burstRing = makeRing();
+  group.userData.body = body;
+  group.userData.woofer = woofer;
+  group.userData.tweeter = tweeter;
+  group.userData.outline = outline;
+  group.userData.bluetoothMark = bluetoothMark;
+  group.userData.rings = rings;
+  group.userData.burstRing = burstRing;
+  group.add(body, woofer, tweeter, outline, bluetoothMark, burstRing, ...rings, makeLabel(label));
   return group;
+}
+
+function spotPlaced(spot) {
+  return !spot || spot.placed !== false;
 }
 
 function syncSpeakers(list) {
   const next = new Set();
+  speakerState.clear();
   for (const spot of list) {
-    if (!spot || typeof spot.id !== "string" || spot.id.length === 0)
+    if (!spot || typeof spot.id !== "string" || spot.id.length === 0 || !spotPlaced(spot))
       continue;
     next.add(spot.id);
+    speakerState.set(spot.id, spot);
     let group = speakerById.get(spot.id);
     const label = typeof spot.label === "string" && spot.label.length ? spot.label : spot.id;
     if (!group) {
@@ -425,8 +505,9 @@ function syncSpeakers(list) {
       group.add(makeLabel(label));
       group.userData.label = label;
     }
-    if (dragId !== spot.id) {
-      group.position.set(clampRoom(Number(spot.x)), room.floorY, clampRoom(Number(spot.z)));
+    if (dragId !== spot.id && trayDragId !== spot.id) {
+      group.position.x = clampRoom(Number(spot.x));
+      group.position.z = clampRoom(Number(spot.z));
     }
   }
   for (const [id, group] of speakerById) {
@@ -437,6 +518,79 @@ function syncSpeakers(list) {
     speakerRoot.remove(group);
     disposeSpeaker(group);
     speakerById.delete(id);
+  }
+}
+
+function animateSpeakers(dt) {
+  const ringCap = VISUAL.dynamics.maxRingOpacity;
+  const scaleCap = VISUAL.dynamics.maxRingScale;
+  const shownRings = qualityHigh ? 3 : 1;
+  for (const [id, group] of speakerById) {
+    const spot = speakerState.get(id) || {};
+    const selected = !!spot.selected;
+    const hover = hoverId === id || focusId === id;
+    const lift = !selected && hover && dragId !== id ? 0.16 : 0;
+    if (dragId !== id)
+      group.position.y = room.floorY + lift;
+
+    const body = group.userData.body;
+    const woofer = group.userData.woofer;
+    const tweeter = group.userData.tweeter;
+    body.material.wireframe = !selected;
+    body.material.transparent = !selected;
+    body.material.opacity = selected ? 1 : 0.45;
+    body.material.color.set(selected ? 0x123038 : 0x3a3344);
+    woofer.material.color.set(selected ? 0xc41d8a : 0x5c4d66);
+    tweeter.material.color.set(selected ? 0x1aa8c4 : 0x667480);
+    woofer.visible = selected;
+    tweeter.visible = selected;
+    group.userData.bluetoothMark.visible = !!spot.bluetooth;
+
+    const outline = group.userData.outline;
+    outline.visible = hover;
+    outline.material.opacity = hover ? 0.7 : 0;
+
+    if (group.userData.wasSelected !== selected) {
+      if (selected)
+        group.userData.burst = 1;
+      else
+        group.userData.fade = 1;
+      group.userData.wasSelected = selected;
+    }
+
+    const drive = compress(Math.max(0, Number(spot.level) || 0), group.userData.levelState, dt);
+    const pulse = 0.65 + 0.35 * Math.sin(simTime * (1.6 + drive * 5));
+    const rings = group.userData.rings;
+    for (let i = 0; i < rings.length; ++i) {
+      const ring = rings[i];
+      const show = selected && i < shownRings && group.userData.burst <= 0;
+      ring.visible = show;
+      if (!show)
+        continue;
+      const scale = Math.min(scaleCap, 0.42 + i * 0.28 + drive * 0.55 * pulse);
+      ring.scale.setScalar(scale);
+      ring.material.opacity = Math.min(ringCap, (0.08 + drive * 0.22) * (1 - i * 0.22) * lumaGain);
+      ring.material.color.set(i % 2 === 0 ? 0x3d8ea0 : 0xa84d98);
+    }
+
+    const burst = group.userData.burstRing;
+    if (group.userData.burst > 0) {
+      group.userData.burst = Math.max(0, group.userData.burst - dt / 0.42);
+      burst.visible = qualityHigh;
+      const age = 1 - group.userData.burst;
+      burst.scale.setScalar(Math.min(scaleCap, 0.35 + age * 1.15));
+      burst.material.opacity = Math.min(ringCap, (1 - age) * 0.4 * lumaGain);
+      burst.material.color.set(0x3df0ff);
+    } else if (group.userData.fade > 0) {
+      group.userData.fade = Math.max(0, group.userData.fade - dt / 0.55);
+      burst.visible = qualityHigh;
+      const age = 1 - group.userData.fade;
+      burst.scale.setScalar(Math.min(scaleCap, 0.4 + age * 0.9));
+      burst.material.opacity = Math.min(ringCap, group.userData.fade * 0.28 * lumaGain);
+      burst.material.color.set(0x8b5cff);
+    } else {
+      burst.visible = false;
+    }
   }
 }
 
@@ -453,26 +607,63 @@ function pointerToNdc(event) {
   pointerNdc.y = -((event.clientY - rect.top) / height) * 2 + 1;
 }
 
-renderer.domElement.addEventListener("pointerdown", (event) => {
-  if (mode !== SCENE)
-    return;
+function speakerHit(event) {
   pointerToNdc(event);
   raycaster.setFromCamera(pointerNdc, perspective);
   const hits = raycaster.intersectObjects(speakerRoot.children, true);
-  if (!hits.length)
+  for (const hit of hits) {
+    let object = hit.object;
+    while (object && !object.userData.speakerId && !object.userData.listener)
+      object = object.parent;
+    if (object && object.userData.listener)
+      continue;
+    if (object && object.userData.speakerId)
+      return object.userData.speakerId;
+  }
+  return null;
+}
+
+function rememberPlacement(id, x, z) {
+  placementOverride.set(id, { x, z });
+  demoSpeakers = demoSpeakers.map((spot) => (spot && spot.id === id ? { ...spot, x, z, placed: true } : spot));
+  callNative("placeSpeaker", [id, x, z]);
+}
+
+function toggleSpeaker(id) {
+  const spot = currentSpeakers.find((item) => item && item.id === id);
+  const next = !(spot && spot.selected);
+  selectionOverride.set(id, next);
+  demoSpeakers = demoSpeakers.map((item) => (item && item.id === id ? { ...item, selected: next } : item));
+  focusId = id;
+  callNative("setOutputSelected", [id, next]);
+  return next;
+}
+
+renderer.domElement.addEventListener("pointerdown", (event) => {
+  if (mode !== SCENE)
     return;
-  let object = hits[0].object;
-  while (object && !object.userData.speakerId)
-    object = object.parent;
-  if (!object || !object.userData.speakerId)
+  const id = speakerHit(event);
+  if (!id)
     return;
-  dragId = object.userData.speakerId;
+  dragId = id;
+  dragMoved = false;
+  pressX = event.clientX;
+  pressY = event.clientY;
+  focusId = id;
   if (renderer.domElement.setPointerCapture)
     renderer.domElement.setPointerCapture(event.pointerId);
 });
 
 renderer.domElement.addEventListener("pointermove", (event) => {
+  if (mode === SCENE && !dragId && !trayDragId) {
+    hoverId = speakerHit(event);
+    return;
+  }
   if (!dragId || mode !== SCENE)
+    return;
+  if (Math.hypot(event.clientX - pressX, event.clientY - pressY) > 4)
+    dragMoved = true;
+  if (!dragMoved)
     return;
   pointerToNdc(event);
   raycaster.setFromCamera(pointerNdc, perspective);
@@ -481,26 +672,39 @@ renderer.domElement.addEventListener("pointermove", (event) => {
   const group = speakerById.get(dragId);
   if (!group)
     return;
-  group.position.set(clampRoom(floorHit.x), room.floorY, clampRoom(floorHit.z));
+  group.position.x = clampRoom(floorHit.x);
+  group.position.z = clampRoom(floorHit.z);
 });
 
 function finishSpeakerDrag() {
   if (!dragId)
     return;
-  const group = speakerById.get(dragId);
   const id = dragId;
+  const group = speakerById.get(id);
   dragId = null;
   if (!group)
     return;
+  if (!dragMoved) {
+    toggleSpeaker(id);
+    return;
+  }
   const x = clampRoom(group.position.x);
   const z = clampRoom(group.position.z);
-  group.position.set(x, room.floorY, z);
-  demoSpeakers = demoSpeakers.map((spot) => (spot.id === id ? { ...spot, x, z } : spot));
-  callNative("placeSpeaker", [id, x, z]);
+  group.position.x = x;
+  group.position.z = z;
+  rememberPlacement(id, x, z);
 }
 
 renderer.domElement.addEventListener("pointerup", finishSpeakerDrag);
-renderer.domElement.addEventListener("pointercancel", finishSpeakerDrag);
+renderer.domElement.addEventListener("pointercancel", () => {
+  dragId = null;
+  trayDragId = null;
+});
+
+renderer.domElement.addEventListener("pointerleave", () => {
+  if (!dragId)
+    hoverId = null;
+});
 
 const gradient = VISUAL.gradient;
 const volumeMaterial = new THREE.ShaderMaterial({
@@ -967,8 +1171,31 @@ function applyFrame(dt) {
   const nativeIds = new Set(nativeSpeakers.map((spot) => spot && spot.id));
   const incoming = demoSpeakers.length
     ? nativeSpeakers.concat(demoSpeakers.filter((spot) => spot && !nativeIds.has(spot.id)))
-    : nativeSpeakers;
+    : nativeSpeakers.slice();
+  for (const spot of incoming) {
+    if (!spot || !spot.id)
+      continue;
+    if (selectionOverride.has(spot.id)) {
+      if (!!spot.selected === selectionOverride.get(spot.id))
+        selectionOverride.delete(spot.id);
+      else
+        spot.selected = selectionOverride.get(spot.id);
+    }
+    if (placementOverride.has(spot.id)) {
+      const placed = placementOverride.get(spot.id);
+      if (spot.placed && Math.abs(Number(spot.x) - placed.x) < 0.05 && Math.abs(Number(spot.z) - placed.z) < 0.05)
+        placementOverride.delete(spot.id);
+      else {
+        spot.placed = true;
+        spot.x = placed.x;
+        spot.z = placed.z;
+      }
+    }
+  }
+  currentSpeakers = incoming;
   syncSpeakers(incoming);
+  animateSpeakers(dt);
+  updateRoomUi(incoming, !!(frame && frame.fullscreen));
 
   if (caption) {
     caption.textContent = MODE_LABEL[mode] || "Waveform";
@@ -1113,9 +1340,22 @@ function guardLuminance(gain, dt) {
 
 window.addEventListener("resize", resize);
 window.addEventListener("keydown", (event) => {
+  if (event.target && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA"))
+    return;
   if (event.key === "Escape") {
     event.preventDefault();
     callNative("exitFullscreen");
+    return;
+  }
+  if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+    window.wavisFocusStep(1);
+    event.preventDefault();
+  } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+    window.wavisFocusStep(-1);
+    event.preventDefault();
+  } else if ((event.key === "Enter" || event.key === " ") && focusId) {
+    toggleSpeaker(focusId);
+    event.preventDefault();
   }
 }, true);
 
@@ -1138,21 +1378,151 @@ window.wavisDemoSpeakers = (list) => {
 window.wavisMoveSpeaker = (id, x, z) => {
   const nx = clampRoom(Number(x));
   const nz = clampRoom(Number(z));
+  rememberPlacement(id, nx, nz);
   let found = false;
   demoSpeakers = demoSpeakers.map((spot) => {
     if (!spot || spot.id !== id)
       return spot;
     found = true;
-    return { ...spot, x: nx, z: nz };
+    return { ...spot, x: nx, z: nz, placed: true };
   });
   if (!found)
-    demoSpeakers.push({ id, label: id, x: nx, z: nz });
+    demoSpeakers.push({ id, label: id, x: nx, z: nz, placed: true, selected: true });
   const group = speakerById.get(id);
-  if (group)
-    group.position.set(nx, room.floorY, nz);
-  callNative("placeSpeaker", [id, nx, nz]);
+  if (group) {
+    group.position.x = nx;
+    group.position.z = nz;
+  }
   return nx + "," + nz;
 };
+window.wavisToggleFocused = () => {
+  if (!focusId)
+    return "";
+  toggleSpeaker(focusId);
+  return focusId;
+};
+window.wavisFocusStep = (delta) => {
+  const placed = currentSpeakers.filter((spot) => spot && spotPlaced(spot));
+  if (!placed.length)
+    return "";
+  const index = Math.max(0, placed.findIndex((spot) => spot.id === focusId));
+  const next = placed[(index + (delta >= 0 ? 1 : placed.length - 1)) % placed.length];
+  focusId = next.id;
+  return focusId;
+};
+window.wavisRoomState = () => {
+  const placed = currentSpeakers.filter((spot) => spot && spotPlaced(spot));
+  const selected = placed.filter((spot) => spot.selected);
+  const tray = currentSpeakers.filter((spot) => spot && spot.placed === false);
+  return "placed=" + placed.length + " selected=" + selected.length + " tray=" + tray.length;
+};
+
+const trayList = document.getElementById("tray-list");
+const focusPanel = document.getElementById("focus");
+const focusName = document.getElementById("focus-name");
+const focusStatus = document.getElementById("focus-status");
+const focusGain = document.getElementById("focus-gain");
+const focusMute = document.getElementById("focus-mute");
+const focusBt = document.getElementById("focus-bt");
+let traySignature = "";
+
+function updateRoomUi(list, fullscreen) {
+  document.body.classList.toggle("fullscreen", !!fullscreen);
+  if (!trayList)
+    return;
+  const tray = list.filter((spot) => spot && spot.placed === false);
+  const signature = tray.map((spot) => spot.id + "|" + spot.label + "|" + (spot.bluetooth ? 1 : 0) + "|" + spot.status).join(";");
+  if (signature !== traySignature) {
+    traySignature = signature;
+    trayList.replaceChildren();
+    if (!tray.length) {
+      const empty = document.createElement("div");
+      empty.className = "tray-empty";
+      empty.textContent = "Every output is in the room.";
+      trayList.appendChild(empty);
+    }
+    for (const spot of tray) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "tray-item" + (spot.bluetooth ? " bluetooth" : "");
+      button.dataset.speakerId = spot.id;
+      button.textContent = spot.label || spot.id;
+      button.setAttribute("aria-label", "Drag " + button.textContent + " into the room");
+      button.addEventListener("pointerdown", (event) => {
+        trayDragId = spot.id;
+        focusId = spot.id;
+        event.preventDefault();
+      });
+      trayList.appendChild(button);
+    }
+  }
+
+  const focused = list.find((spot) => spot && spot.id === focusId && spotPlaced(spot));
+  if (focusPanel)
+    focusPanel.classList.toggle("open", !!focused && !fullscreen);
+  if (!focused)
+    return;
+  if (focusName)
+    focusName.textContent = focused.label || focused.id;
+  if (focusStatus) {
+    const latency = Number(focused.latencyMs) || 0;
+    focusStatus.textContent = (focused.status || "Off") + " · " + Math.round(latency) + " ms";
+  }
+  if (focusGain && document.activeElement !== focusGain)
+    focusGain.value = String(Math.max(0, Math.min(1, Number(focused.gain) || 0)));
+  if (focusMute)
+    focusMute.textContent = focused.muted ? "Muted" : "Mute";
+  if (focusBt)
+    focusBt.classList.toggle("on", !!focused.bluetooth);
+}
+
+window.addEventListener("pointerup", (event) => {
+  if (!trayDragId)
+    return;
+  const id = trayDragId;
+  trayDragId = null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  const inside = event.clientX >= rect.left && event.clientX <= rect.right && event.clientY >= rect.top && event.clientY <= rect.bottom;
+  if (!inside)
+    return;
+  let x = 0;
+  let z = -0.4;
+  if (mode === SCENE) {
+    pointerToNdc(event);
+    raycaster.setFromCamera(pointerNdc, perspective);
+    if (!raycaster.ray.intersectPlane(floorPlane, floorHit))
+      return;
+    x = floorHit.x;
+    z = floorHit.z;
+  } else {
+    x = -1.5 + (speakerById.size % 4);
+  }
+  rememberPlacement(id, clampRoom(x), clampRoom(z));
+});
+
+document.querySelectorAll(".preset").forEach((button) => {
+  button.addEventListener("click", () => {
+    const name = button.getAttribute("data-preset");
+    if (name)
+      callNative("applySpeakerPreset", [name]);
+  });
+});
+
+if (focusGain) {
+  focusGain.addEventListener("input", () => {
+    if (!focusId)
+      return;
+    callNative("setOutputGain", [focusId, Number(focusGain.value)]);
+  });
+}
+if (focusMute) {
+  focusMute.addEventListener("click", () => {
+    const spot = currentSpeakers.find((item) => item && item.id === focusId);
+    if (!spot)
+      return;
+    callNative("setOutputMuted", [focusId, !spot.muted]);
+  });
+}
 
 const backend = window.__JUCE__ && window.__JUCE__.backend;
 if (backend && typeof backend.addEventListener === "function") {
