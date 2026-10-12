@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #070414; }
+    canvas { display: block; width: 100%; height: 100%; }
+    #caption { display: none; }
+  </style>
+</head>
+<body>
+  <div id="caption">Waveform</div>
+  <script>
+    window.__WAVIS_STEP__ = true;
+    let __seed = 1;
+    Math.random = () => {
+      __seed = (__seed * 16807) % 2147483647;
+      return (__seed - 1) / 2147483646;
+    };
+    window.__JUCE__ = {
+      backend: {
+        handlers: {},
+        addEventListener(name, fn) {
+          (this.handlers[name] || (this.handlers[name] = [])).push(fn);
+        },
+        emitEvent() {},
+        push(name, payload) {
+          for (const fn of this.handlers[name] || []) fn(payload);
+        }
+      }
+    };
+  </script>
+  <script src="/app.js"></script>
+  <script>
+    function luma(r, g, b) {
+      return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    }
+
+    function measure() {
+      const src = document.querySelector("canvas");
+      const w = src.width;
+      const h = src.height;
+      const copy = document.createElement("canvas");
+      copy.width = w;
+      copy.height = h;
+      const ctx = copy.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(src, 0, 0);
+      const data = ctx.getImageData(0, 0, w, h).data;
+      const values = [];
+      let sum = 0;
+      let peak = 0;
+      let nearWhite = 0;
+      const stride = 2;
+      for (let y = 0; y < h; y += stride) {
+        for (let x = 0; x < w; x += stride) {
+          const i = (y * w + x) * 4;
+          const yv = luma(data[i], data[i + 1], data[i + 2]);
+          values.push(yv);
+          sum += yv;
+          if (yv > peak) peak = yv;
+          if (yv >= 0.92) nearWhite += 1;
+        }
+      }
+      values.sort((a, b) => a - b);
+      const at = (p) => values[Math.min(values.length - 1, Math.floor(p * (values.length - 1)))];
+      const cut = Math.floor(values.length * 0.92);
+      let highlight = 0;
+      for (let i = cut; i < values.length; ++i)
+        highlight += values[i];
+      return {
+        average: sum / values.length,
+        peak,
+        nearWhite: nearWhite / values.length,
+        p10: at(0.1),
+        p90: at(0.9),
+        highlight: highlight / Math.max(1, values.length - cut),
+        width: w,
+        height: h,
+      };
+    }
+
+    function waveOf(t, amount) {
+      const wave = [];
+      for (let i = 0; i < 128; ++i) {
+        const p = i / 128;
+        const bass = Math.sin(p * Math.PI * 4 + t * 6);
+        const noise = Math.sin(i * 12.9898 + t * 40) * Math.sin(i * 0.37 + t * 9);
+        wave.push(Math.max(-1, Math.min(1, amount * (bass * 0.82 + noise * 0.45))));
+      }
+      return wave;
+    }
+
+    function binsOf(bass, mid, treble, t) {
+      const bins = [];
+      for (let i = 0; i < 64; ++i) {
+        const band = i < 8 ? bass : i < 32 ? mid : treble;
+        bins.push(Math.max(0, band * (0.55 + 0.45 * Math.abs(Math.sin(i * 0.41 + t)))));
+      }
+      return bins;
+    }
+
+    function signal(kind, t) {
+      if (kind === "music") {
+        const kick = Math.pow(Math.max(0, Math.sin(t * Math.PI * 2)), 6);
+        const bass = 0.12 + 0.85 * kick;
+        const mid = 0.14 + 0.5 * (0.5 + 0.5 * Math.sin(t * 1.6));
+        const treble = 0.08 + 0.45 * (0.5 + 0.5 * Math.sin(t * 5.1 + 0.7));
+        const level = Math.max(bass, mid, treble);
+        return { mode: window.__MODE__ || "radial", bass, mid, treble, level, bins: binsOf(bass, mid, treble, t), wave: waveOf(t, 0.22 + 0.78 * kick), fullscreen: true };
+      }
+      if (kind === "overload") {
+        return {
+          mode: window.__MODE__ || "radial",
+          bass: 6.5,
+          mid: 4.2,
+          treble: 3.4,
+          level: 5,
+          bins: binsOf(1, 1, 1, t),
+          wave: waveOf(t, 1),
+          fullscreen: true,
+        };
+      }
+      const quiet = kind === "quiet";
+      const bass = quiet ? 0.1 : 1;
+      const mid = quiet ? 0.08 : 0.92;
+      const treble = quiet ? 0.05 : 0.78;
+      const level = quiet ? 0.12 : 1;
+      return {
+        mode: window.__MODE__ || "radial",
+        bass,
+        mid,
+        treble,
+        level,
+        bins: binsOf(bass, mid, treble, t),
+        wave: waveOf(t, quiet ? 0.12 : 1),
+        fullscreen: true,
+      };
+    }
+
+    window.__wavisRun = (kind, frames, settle, sampleEvery) => {
+      const samples = [];
+      const stride = sampleEvery || 1;
+      for (let i = 0; i < frames; ++i) {
+        const t = i / 60;
+        const frame = signal(kind, t);
+        window.__JUCE__.backend.push("wavisFrame", frame);
+        window.wavisStep(1 / 60);
+        if (i >= settle && (i - settle) % stride === 0)
+          samples.push(Object.assign(measure(), { level: frame.level, bass: frame.bass }));
+      }
+      const avg = samples.reduce((s, r) => s + r.average, 0) / samples.length;
+      const peak = samples.reduce((s, r) => Math.max(s, r.peak), 0);
+      const near = samples.reduce((s, r) => s + r.nearWhite, 0) / samples.length;
+      const means = samples.map((r) => r.average);
+      const highlights = samples.map((r) => r.highlight);
+      const mean = avg;
+      const variance = means.reduce((s, v) => s + (v - mean) ** 2, 0) / means.length;
+      const last = samples[samples.length - 1];
+      return {
+        kind,
+        frames: samples.length,
+        average: avg,
+        peak,
+        nearWhite: near,
+        stdev: Math.sqrt(variance),
+        minAverage: Math.min(...means),
+        maxAverage: Math.max(...means),
+        minHighlight: Math.min(...highlights),
+        maxHighlight: Math.max(...highlights),
+        highlight: last.highlight,
+        p10: last.p10,
+        p90: last.p90,
+        width: samples[0].width,
+        height: samples[0].height,
+      };
+    };
+  </script>
+</body>
+</html>

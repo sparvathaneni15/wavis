@@ -1,8 +1,10 @@
 {
   "name": "wavis-visual",
   "private": true,
+  "type": "module",
   "scripts": {
-    "build": "esbuild src/main.js --bundle --format=iife --outfile=dist/app.js && cp index.html dist/index.html"
+    "build": "esbuild src/main.js --bundle --format=iife --outfile=dist/app.js && cp index.html dist/index.html",
+    "test": "node --test src/visual.test.js"
   },
   "dependencies": {
     "three": "0.170.0"

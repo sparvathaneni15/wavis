@@ -40,6 +40,7 @@ if(NPM_EXECUTABLE)
         COMMAND "${NPM_EXECUTABLE}" run build --prefix "${CMAKE_CURRENT_SOURCE_DIR}/web"
         DEPENDS
             "${CMAKE_CURRENT_SOURCE_DIR}/web/src/main.js"
+            "${CMAKE_CURRENT_SOURCE_DIR}/web/src/visual.js"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/index.html"
             "${CMAKE_CURRENT_SOURCE_DIR}/web/package.json"
         COMMENT "Bundling the Three.js visual"
