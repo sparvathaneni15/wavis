@@ -2044,10 +2044,10 @@
     angleTo(q) {
       return 2 * Math.acos(Math.abs(clamp(this.dot(q), -1, 1)));
     }
-    rotateTowards(q, step) {
+    rotateTowards(q, step2) {
       const angle = this.angleTo(q);
       if (angle === 0) return this;
-      const t = Math.min(1, step / angle);
+      const t = Math.min(1, step2 / angle);
       this.slerp(q, t);
       return this;
     }
@@ -18463,14 +18463,14 @@ void main() {
       _ray$1.copy(raycaster.ray).applyMatrix4(_inverseMatrix$1);
       const localThreshold = threshold / ((this.scale.x + this.scale.y + this.scale.z) / 3);
       const localThresholdSq = localThreshold * localThreshold;
-      const step = this.isLineSegments ? 2 : 1;
+      const step2 = this.isLineSegments ? 2 : 1;
       const index = geometry.index;
       const attributes = geometry.attributes;
       const positionAttribute = attributes.position;
       if (index !== null) {
         const start = Math.max(0, drawRange.start);
         const end = Math.min(index.count, drawRange.start + drawRange.count);
-        for (let i = start, l = end - 1; i < l; i += step) {
+        for (let i = start, l = end - 1; i < l; i += step2) {
           const a = index.getX(i);
           const b = index.getX(i + 1);
           const intersect = checkIntersection(this, raycaster, _ray$1, localThresholdSq, a, b);
@@ -18489,7 +18489,7 @@ void main() {
       } else {
         const start = Math.max(0, drawRange.start);
         const end = Math.min(positionAttribute.count, drawRange.start + drawRange.count);
-        for (let i = start, l = end - 1; i < l; i += step) {
+        for (let i = start, l = end - 1; i < l; i += step2) {
           const intersect = checkIntersection(this, raycaster, _ray$1, localThresholdSq, i, i + 1);
           if (intersect) {
             intersects.push(intersect);
@@ -21986,37 +21986,168 @@ void main() {
     }
   };
 
-  // src/main.js
+  // src/visual.js
+  function softLimit(value, ceiling, kneeRatio = 0.7) {
+    const v = Math.max(0, Number.isFinite(value) ? value : 0);
+    const cap = Math.max(1e-4, Number.isFinite(ceiling) ? ceiling : 1);
+    const start = cap * Math.min(0.95, Math.max(0.05, kneeRatio));
+    if (v <= start)
+      return v;
+    const span = cap - start;
+    const t = (v - start) / span;
+    return start + span * (1 - Math.exp(-t));
+  }
+  function stepRunningPeak(peak, sample, dt, attack, release) {
+    const current = Math.max(0, Number.isFinite(peak) ? peak : 0);
+    const target = Math.max(0, Number.isFinite(sample) ? sample : 0);
+    const rate = target > current ? attack : release;
+    const step2 = 1 - Math.exp(-Math.max(0, rate) * Math.max(0, dt));
+    return current + (target - current) * step2;
+  }
+  function normalizeToPeak(sample, peak, floor) {
+    const s = Math.max(0, Number.isFinite(sample) ? sample : 0);
+    const denom = Math.max(Number.isFinite(peak) ? peak : 0, Number.isFinite(floor) ? floor : 0, 1e-4);
+    return s / denom;
+  }
+  function createLimiterState() {
+    return { bass: 0, mid: 0, treble: 0, level: 0 };
+  }
+  function limitBands(state, raw, dt, limiter) {
+    const out = {};
+    for (const key of ["bass", "mid", "treble", "level"]) {
+      const sample = Math.max(0, Number(raw[key]) || 0);
+      state[key] = stepRunningPeak(state[key], sample, dt, limiter.attack, limiter.release);
+      out[key] = softLimit(normalizeToPeak(sample, state[key], limiter.floor), limiter.bandCeiling, limiter.knee);
+    }
+    return out;
+  }
+  function boundDrives(visual, bands) {
+    const knee = visual.limiter.knee;
+    const bass2 = Math.max(0, Number(bands.bass) || 0);
+    const mid2 = Math.max(0, Number(bands.mid) || 0);
+    const treble2 = Math.max(0, Number(bands.treble) || 0);
+    const level2 = Math.max(0, Number(bands.level) || 0);
+    const scene = visual.scene;
+    const gradient2 = visual.gradient;
+    return {
+      bass: bass2,
+      mid: mid2,
+      treble: treble2,
+      level: level2,
+      bloom: softLimit(visual.bloom.base + bass2 * visual.bloom.bass, visual.bloom.ceiling, knee),
+      expansion: softLimit(scene.expansion.baseSpeed + mid2 * scene.expansion.midToSpeed, scene.expansion.ceiling, knee),
+      formScale: softLimit(scene.form.baseScale + bass2 * scene.form.bassScale, scene.form.ceiling, knee),
+      size: softLimit(scene.size.base + mid2 * scene.size.mid + treble2 * scene.size.treble, scene.size.ceiling, knee),
+      brightness: softLimit(
+        scene.brightness.base + mid2 * scene.brightness.mid + treble2 * scene.brightness.treble,
+        scene.brightness.ceiling,
+        knee
+      ),
+      trail: softLimit(scene.trailLow + level2 * (scene.trailLength - scene.trailLow), scene.trailCeiling, knee),
+      emission: softLimit(scene.emission.baseRate + mid2 * scene.emission.midToRate, scene.emission.ceiling, knee),
+      mass: softLimit(bass2 * scene.curvature.bassToMass, scene.curvature.massCeiling, knee),
+      volumeEnergy: softLimit(gradient2.energy + level2 * gradient2.loudnessEnergy, gradient2.energyCeiling, knee)
+    };
+  }
   var VISUAL = {
+    // Smoothing after the limiter. Attack opens quickly; release lets a hit decay.
     attack: 16,
     release: 2.1,
-    accentFollow: 0.32,
     budgetMs: 20,
     recoverMs: 12,
     warmupFrames: 48,
-    bloom: { base: 0.58, bass: 1.1, radius: 0.42, threshold: 0.34 },
-    waveform: { trails: 14, trailsLow: 5, halfWidth: 65e-4 },
-    bars: { count: 64, height: 3.2, radius: 0.045 },
+    // Running-peak normaliser, then a soft ceiling on each band.
+    // floor 1: do not amplify a band that is already in 0..1.
+    // attack is many times faster than release, so a full-scale bass hit is absorbed
+    // in a frame or two and the peak stays high while the note rings.
+    limiter: {
+      attack: 48,
+      release: 0.7,
+      floor: 1,
+      bandCeiling: 1,
+      knee: 0.7
+    },
+    // OutputPass applies this exposure with ACES. Materials stay linear; the tone map
+    // is the last step, so overlapping additive fragments compress instead of clipping.
+    tone: {
+      exposure: 0.9
+    },
+    // Accent hue for the waveform, bars, and wireframe. The swing stays inside
+    // cyan → violet/magenta, and follow is slow so loudness does not strobe the hue.
+    hue: {
+      from: 0.5,
+      to: 0.78,
+      saturation: 0.78,
+      lightness: 0.5,
+      follow: 0.08
+    },
+    // Bloom is a halo on the bright cores only. `bass` is how far a full bass band
+    // may lift strength; `ceiling` is the soft limit either way.
+    bloom: {
+      base: 0.06,
+      bass: 0.07,
+      ceiling: 0.16,
+      radius: 0.22,
+      threshold: 0.84
+    },
+    waveform: {
+      trails: 6,
+      trailsLow: 3,
+      halfWidth: 48e-4,
+      // Peak vertical half-extent of the stroke, in view units.
+      amplitude: 0.62,
+      // Oldest stroke opacity is opacity * fade^i. The sum stays under 1 so the
+      // stacked additive strokes cannot become a white ribbon.
+      opacity: 0.42,
+      fade: 0.52,
+      colorGain: 0.78
+    },
+    bars: {
+      count: 64,
+      height: 2.35,
+      radius: 0.045,
+      // Pulls bar colour down so bloom does not lift a full-scale spectrum to white.
+      colorGain: 0.66
+    },
     scene: {
       particlesHigh: 480,
       particlesLow: 140,
-      trailLength: 12,
-      trailLow: 4,
+      // Trail buffer length, and the loud end of the audio-driven trail.
+      trailLength: 8,
+      trailLow: 3,
+      trailCeiling: 8,
+      // Trail fragments are dimmer than the particle head so a stack of segments
+      // does not add up to white.
+      trailGain: 0.34,
+      // Fragment soft knee for additive particles. Higher bends bright cores sooner,
+      // which is what stops a cluster of cyan/magenta/violet from summing to white.
+      additiveKnee: 2.6,
       maxRadius: 5.6,
       maxAge: 9.5,
-      curvature: { bassToMass: 6.5, softening: 0.2, maxAccel: 24 },
+      curvature: {
+        // Bass still bends paths, but a smaller mass keeps particles from collapsing
+        // onto one point and adding every hue into a white core.
+        bassToMass: 2.2,
+        massCeiling: 2.6,
+        softening: 0.2,
+        maxAccel: 24
+      },
       wells: [
         { x: 0, y: 0, z: 0, mass: 1, drift: 0 },
         { x: 2.05, y: 0.2, z: 0.45, mass: 0.46, drift: 0.16 }
       ],
-      emission: { baseRate: 22, midToRate: 80 },
-      expansion: { baseSpeed: 0.16, midToSpeed: 0.72 },
-      size: { base: 9, mid: 11, treble: 9 },
-      brightness: { base: 0.55, mid: 0.7, treble: 1.15 },
-      shimmer: { trebleSpeed: 28, trebleAmount: 0.32 },
-      sparkle: { trebleChance: 0.62 },
+      emission: { baseRate: 12, midToRate: 16, ceiling: 34 },
+      expansion: { baseSpeed: 0.08, midToSpeed: 0.18, ceiling: 0.32 },
+      // Point size in the particle shader is aSize * depthScale / view depth.
+      // depthScale used to be a hardcoded 260, which made each sprite hundreds of
+      // pixels wide and let them paint the frame white.
+      size: { base: 2.05, mid: 0.55, treble: 0.32, ceiling: 3.15, depthScale: 136 },
+      brightness: { base: 0.24, mid: 0.09, treble: 0.06, ceiling: 0.4 },
+      shimmer: { trebleSpeed: 28, trebleAmount: 0.22 },
+      sparkle: { trebleChance: 0.28, whiteMix: 0.16 },
       speedColor: { slow: 0.45, fast: 3.1 },
-      form: { baseScale: 0.78, bassScale: 0.62 }
+      // Wireframe radius. bassScale is the pulse on top of baseScale, not the whole size.
+      form: { baseScale: 0.72, bassScale: 0.14, ceiling: 0.92 }
     },
     gradient: {
       radius: 17,
@@ -22024,20 +22155,40 @@ void main() {
       stepsLow: 2,
       octavesHigh: 3,
       octavesLow: 1,
-      timeSpeed: 0.09,
-      noiseScale: 0.46,
-      fieldFreq: 1.15,
-      warp: 3.8,
+      // Field motion. Previously this was timeSpeed 0.09 multiplied by a hardcoded 8.
+      timeSpeed: 0.2,
+      // Scales how far layers, noise, and depth pull the hue. Lower is a slower shift.
+      hueSpeed: 0.2,
+      // Low spatial frequency so a ray through the volume does not average itself
+      // into a flat fog. The shapes stay large enough to read across a room.
+      noiseScale: 0.22,
+      fieldFreq: 0.38,
+      warp: 2.4,
       softening: 0.7,
-      depthHue: 0.05,
-      energy: 1.35,
-      loudnessEnergy: 0.45,
-      accentSpan: 0.3,
+      depthHue: 0.04,
+      // Resting volume brightness, plus how far level may lift it, then a ceiling.
+      energy: 0.72,
+      loudnessEnergy: 0.34,
+      energyCeiling: 1.15,
+      // Dark valleys and bright ridges. A high floor here is what flattened the field.
+      glowFloor: 0.03,
+      glowSpan: 1.15,
+      // Weight of each ray step. Was a hardcoded 0.2, which stacked the steps past 1.
+      scatter: 0.15,
+      // In-shader shoulder, applied before bloom: color / (1 + color * compress).
+      compress: 0.7,
+      accentSpan: 0.07,
+      // Palette anchors stay the Neon Night primaries. saturation mixes each toward
+      // its luminance; gain scales the result so the field stays darker than the particles.
+      saturation: 0.82,
+      gain: 0.62,
       cyan: [0.18, 0.9, 1],
       magenta: [1, 0.14, 0.8],
       violet: [0.52, 0.3, 1]
     }
   };
+
+  // src/main.js
   var WAVE = "oscilloscope";
   var BARS = "spectrum";
   var SCENE = "radial";
@@ -22071,7 +22222,8 @@ void main() {
   var renderer = new WebGLRenderer({ antialias: true, alpha: false, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
   renderer.setClearColor(459796, 1);
-  renderer.toneMapping = NoToneMapping;
+  renderer.toneMapping = ACESFilmicToneMapping;
+  renderer.toneMappingExposure = VISUAL.tone.exposure;
   renderer.setSize(window.innerWidth, window.innerHeight, false);
   document.body.appendChild(renderer.domElement);
   var ortho = new OrthographicCamera(-1.25, 1.25, 1.05, -1.05, 0.1, 10);
@@ -22140,25 +22292,34 @@ void main() {
     depthWrite: false,
     blending: AdditiveBlending,
     toneMapped: false,
+    uniforms: {
+      uDepthScale: { value: sceneCfg.size.depthScale },
+      uKnee: { value: sceneCfg.additiveKnee }
+    },
     vertexShader: `
     attribute float aSize;
     attribute vec3 aColor;
+    uniform float uDepthScale;
     varying vec3 vColor;
     void main() {
       vColor = aColor;
       vec4 mv = modelViewMatrix * vec4(position, 1.0);
-      gl_PointSize = aSize * (260.0 / max(0.2, -mv.z));
+      gl_PointSize = aSize * (uDepthScale / max(0.2, -mv.z));
       gl_Position = projectionMatrix * mv;
     }
   `,
     fragmentShader: `
     varying vec3 vColor;
+    uniform float uKnee;
     void main() {
       vec2 d = gl_PointCoord - vec2(0.5);
       float r = length(d);
       if (r > 0.5) discard;
       float glow = smoothstep(0.5, 0.05, r);
-      gl_FragColor = vec4(vColor * glow, glow);
+      vec3 rgb = vColor * glow;
+      float peak = max(rgb.r, max(rgb.g, rgb.b));
+      rgb *= 1.0 / (1.0 + uKnee * peak);
+      gl_FragColor = vec4(rgb, glow);
     }
   `
   });
@@ -22185,6 +22346,15 @@ void main() {
   );
   worldScene.add(form);
   var gradient = VISUAL.gradient;
+  function gradePalette(rgb) {
+    const r = rgb[0];
+    const g = rgb[1];
+    const b = rgb[2];
+    const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const mix = gradient.saturation;
+    const gain = gradient.gain;
+    return new Vector3((y + (r - y) * mix) * gain, (y + (g - y) * mix) * gain, (y + (b - y) * mix) * gain);
+  }
   var volumeMaterial = new ShaderMaterial({
     side: BackSide,
     depthWrite: false,
@@ -22193,7 +22363,6 @@ void main() {
       uCameraPos: { value: new Vector3() },
       uTime: { value: 0 },
       uAccent: { value: 0 },
-      uLevel: { value: 0 },
       uMassA: { value: 0 },
       uMassB: { value: 0 },
       uWellA: { value: new Vector3() },
@@ -22204,13 +22373,17 @@ void main() {
       uFieldFreq: { value: gradient.fieldFreq },
       uDepthHue: { value: gradient.depthHue },
       uEnergy: { value: gradient.energy },
-      uLoudnessEnergy: { value: gradient.loudnessEnergy },
+      uHueSpeed: { value: gradient.hueSpeed },
+      uGlowFloor: { value: gradient.glowFloor },
+      uGlowSpan: { value: gradient.glowSpan },
+      uScatter: { value: gradient.scatter },
+      uCompress: { value: gradient.compress },
       uAccentSpan: { value: gradient.accentSpan },
       uSteps: { value: gradient.stepsHigh },
       uOctaves: { value: gradient.octavesHigh },
-      uCyan: { value: new Vector3().fromArray(gradient.cyan) },
-      uMagenta: { value: new Vector3().fromArray(gradient.magenta) },
-      uViolet: { value: new Vector3().fromArray(gradient.violet) }
+      uCyan: { value: gradePalette(gradient.cyan) },
+      uMagenta: { value: gradePalette(gradient.magenta) },
+      uViolet: { value: gradePalette(gradient.violet) }
     },
     vertexShader: `
     varying vec3 vWorld;
@@ -22225,7 +22398,6 @@ void main() {
     uniform vec3 uCameraPos;
     uniform float uTime;
     uniform float uAccent;
-    uniform float uLevel;
     uniform float uMassA;
     uniform float uMassB;
     uniform vec3 uWellA;
@@ -22236,7 +22408,11 @@ void main() {
     uniform float uFieldFreq;
     uniform float uDepthHue;
     uniform float uEnergy;
-    uniform float uLoudnessEnergy;
+    uniform float uHueSpeed;
+    uniform float uGlowFloor;
+    uniform float uGlowSpan;
+    uniform float uScatter;
+    uniform float uCompress;
     uniform float uAccentSpan;
     uniform float uSteps;
     uniform float uOctaves;
@@ -22304,8 +22480,9 @@ void main() {
       float sheets = sin(q.z * uFieldFreq * 0.86 - q.y * uFieldFreq * 0.48 - uTime * 0.65);
       float columns = sin(q.y * uFieldFreq * 1.12 + q.x * 0.22 + uTime * 0.4);
       float noise = fbm(q * uNoiseScale + vec3(0.0, uTime * 0.35, uTime * 0.15));
-      float hue = fract(0.08 + layers * 0.16 + sheets * 0.14 + columns * 0.1 + noise * 0.42 + depthHue + uAccent * uAccentSpan);
-      float glow = 0.38 + 0.62 * (0.5 + 0.5 * layers) * (0.6 + 0.4 * noise);
+      float hue = fract(0.08 + (layers * 0.16 + sheets * 0.14 + columns * 0.1 + noise * 0.42 + depthHue) * uHueSpeed + uAccent * uAccentSpan);
+      float ridge = smoothstep(-0.05, 0.78, layers) * smoothstep(-0.15, 0.85, sheets);
+      float glow = uGlowFloor + uGlowSpan * ridge * (0.4 + 0.6 * noise);
       return palette(hue) * glow;
     }
 
@@ -22315,19 +22492,20 @@ void main() {
       vec3 direction = ray / far;
       float steps = clamp(uSteps, 1.0, 8.0);
       float stepLen = far / steps;
-      vec3 color = vec3(0.03, 0.015, 0.05);
+      vec3 color = vec3(0.025, 0.012, 0.045);
       float remaining = 1.0;
-      float energy = uEnergy + uLoudnessEnergy * uLevel;
+      float energy = uEnergy;
       for (int i = 0; i < 8; ++i) {
         if (float(i) >= steps)
           break;
         float distance = (float(i) + 0.5) * stepLen;
         vec3 samplePos = uCameraPos + direction * distance;
         vec3 sampleColor = field(samplePos, distance * uDepthHue);
-        color += sampleColor * 0.2 * remaining * energy;
+        color += sampleColor * uScatter * remaining * energy;
         remaining *= 0.8;
       }
-      gl_FragColor = vec4(color, 1.0);
+      vec3 graded = color / (vec3(1.0) + color * uCompress);
+      gl_FragColor = vec4(graded, 1.0);
     }
   `
   });
@@ -22357,6 +22535,8 @@ void main() {
   var treble = 0;
   var level = 0;
   var accent = 0;
+  var limiterState = createLimiterState();
+  var drive = boundDrives(VISUAL, { bass: 0, mid: 0, treble: 0, level: 0 });
   var emitBudget = 0;
   var trailPhase = 0;
   var simTime = 0;
@@ -22404,7 +22584,7 @@ void main() {
     return well.mass;
   }
   function integrateParticles(dt) {
-    const mass = bass * sceneCfg.curvature.bassToMass;
+    const mass = drive.mass;
     const wellA = volumeMaterial.uniforms.uWellA.value;
     const wellB = volumeMaterial.uniforms.uWellB.value;
     const massA = mass * wellPosition(0, simTime, wellA);
@@ -22412,12 +22592,12 @@ void main() {
     volumeMaterial.uniforms.uMassA.value = massA;
     volumeMaterial.uniforms.uMassB.value = massB;
     trailPhase += 1;
-    emitBudget += (sceneCfg.emission.baseRate + mid * sceneCfg.emission.midToRate) * dt;
+    emitBudget += drive.emission * dt;
     let births = Math.floor(emitBudget);
     emitBudget -= births;
     const soft = sceneCfg.curvature.softening;
     const maxAccel = sceneCfg.curvature.maxAccel;
-    const radial = sceneCfg.expansion.baseSpeed + mid * sceneCfg.expansion.midToSpeed;
+    const radial = drive.expansion;
     for (let i = 0; i < activeParticles; ++i) {
       if (!alive[i]) {
         if (births > 0) {
@@ -22497,8 +22677,9 @@ void main() {
     const white = new Color(16777215);
     const shimmerAmp = treble * sceneCfg.shimmer.trebleAmount;
     const shimmerSpeed = sceneCfg.shimmer.trebleSpeed;
-    const pointSize = sceneCfg.size.base + mid * sceneCfg.size.mid + treble * sceneCfg.size.treble;
-    const brightness = sceneCfg.brightness.base + mid * sceneCfg.brightness.mid + treble * sceneCfg.brightness.treble;
+    const pointSize = drive.size;
+    const brightness = drive.brightness;
+    const trailGain = sceneCfg.trailGain;
     let vertex2 = 0;
     for (let i = 0; i < particleCount; ++i) {
       const visible = i < activeParticles && alive[i];
@@ -22513,7 +22694,7 @@ void main() {
       sizes[i] = visible ? pointSize * (sparkle ? 1.8 : 1) : 0;
       speedColor(Math.hypot(vx[i], vy[i], vz[i]), color);
       if (sparkle)
-        color.lerp(white, 0.65);
+        color.lerp(white, sceneCfg.sparkle.whiteMix);
       color.multiplyScalar(visible ? brightness : 0);
       colors[i * 3] = color.r;
       colors[i * 3 + 1] = color.g;
@@ -22525,18 +22706,18 @@ void main() {
         const fade1 = draw ? (segment + 2) / trailLength : 0;
         speedColor(trail[a + 3], color);
         trailPositions[vertex2] = trail[a];
-        trailColors[vertex2++] = color.r * fade0 * brightness;
+        trailColors[vertex2++] = color.r * fade0 * brightness * trailGain;
         trailPositions[vertex2] = trail[a + 1];
-        trailColors[vertex2++] = color.g * fade0 * brightness;
+        trailColors[vertex2++] = color.g * fade0 * brightness * trailGain;
         trailPositions[vertex2] = trail[a + 2];
-        trailColors[vertex2++] = color.b * fade0 * brightness;
+        trailColors[vertex2++] = color.b * fade0 * brightness * trailGain;
         speedColor(trail[a + 7], color);
         trailPositions[vertex2] = trail[a + 4];
-        trailColors[vertex2++] = color.r * fade1 * brightness;
+        trailColors[vertex2++] = color.r * fade1 * brightness * trailGain;
         trailPositions[vertex2] = trail[a + 5];
-        trailColors[vertex2++] = color.g * fade1 * brightness;
+        trailColors[vertex2++] = color.g * fade1 * brightness * trailGain;
         trailPositions[vertex2] = trail[a + 6];
-        trailColors[vertex2++] = color.b * fade1 * brightness;
+        trailColors[vertex2++] = color.b * fade1 * brightness * trailGain;
       }
     }
     pointGeometry.attributes.position.needsUpdate = true;
@@ -22549,7 +22730,7 @@ void main() {
     const positions = mesh.geometry.attributes.position.array;
     const count = Math.min(samples.length, 128);
     mesh.material.opacity = opacity;
-    mesh.material.color.copy(accentColor);
+    mesh.material.color.copy(accentColor).multiplyScalar(VISUAL.waveform.colorGain);
     if (count < 2) {
       positions.fill(0);
       mesh.geometry.attributes.position.needsUpdate = true;
@@ -22560,8 +22741,8 @@ void main() {
     for (let i = 0; i < count - 1; ++i) {
       const x0 = ortho.left + span * (i / (count - 1));
       const x1 = ortho.left + span * ((i + 1) / (count - 1));
-      const y0 = Math.max(-1, Math.min(1, samples[i])) * 0.78;
-      const y1 = Math.max(-1, Math.min(1, samples[i + 1])) * 0.78;
+      const y0 = Math.max(-1, Math.min(1, samples[i])) * VISUAL.waveform.amplitude;
+      const y1 = Math.max(-1, Math.min(1, samples[i + 1])) * VISUAL.waveform.amplitude;
       const tri = [
         x0,
         y0 - width,
@@ -22615,12 +22796,23 @@ void main() {
     const targetMid = frame2 && typeof frame2.mid === "number" ? frame2.mid : 0;
     const targetTreble = frame2 && typeof frame2.treble === "number" ? frame2.treble : 0;
     const targetLevel = frame2 && typeof frame2.level === "number" ? frame2.level : 0;
-    bass = follow(bass, targetBass, dt, VISUAL.attack, VISUAL.release);
-    mid = follow(mid, targetMid, dt, VISUAL.attack, VISUAL.release);
-    treble = follow(treble, targetTreble, dt, VISUAL.attack, VISUAL.release);
-    level = follow(level, targetLevel, dt, VISUAL.attack, VISUAL.release);
-    accent += (level - accent) * (1 - Math.exp(-VISUAL.accentFollow * dt));
-    accentColor.setHSL(lerp2(0.51, 0.89, clamp01(accent)), 0.86, 0.62);
+    const limited = limitBands(limiterState, {
+      bass: targetBass,
+      mid: targetMid,
+      treble: targetTreble,
+      level: targetLevel
+    }, dt, VISUAL.limiter);
+    bass = follow(bass, limited.bass, dt, VISUAL.attack, VISUAL.release);
+    mid = follow(mid, limited.mid, dt, VISUAL.attack, VISUAL.release);
+    treble = follow(treble, limited.treble, dt, VISUAL.attack, VISUAL.release);
+    level = follow(level, limited.level, dt, VISUAL.attack, VISUAL.release);
+    drive = boundDrives(VISUAL, { bass, mid, treble, level });
+    accent += (level - accent) * (1 - Math.exp(-VISUAL.hue.follow * dt));
+    accentColor.setHSL(
+      lerp2(VISUAL.hue.from, VISUAL.hue.to, clamp01(accent)),
+      VISUAL.hue.saturation,
+      VISUAL.hue.lightness
+    );
     if (frame2 && (frame2.mode === WAVE || frame2.mode === BARS || frame2.mode === SCENE))
       mode = frame2.mode;
     if (caption) {
@@ -22638,13 +22830,13 @@ void main() {
     const shownTrails = qualityHigh ? VISUAL.waveform.trails : VISUAL.waveform.trailsLow;
     for (let i = 0; i < ribbons.length; ++i) {
       const samplesForRibbon = waveHistory[i];
-      const fade = i < shownTrails && samplesForRibbon ? Math.pow(0.72, i) : 0;
+      const fade = i < shownTrails && samplesForRibbon ? VISUAL.waveform.opacity * Math.pow(VISUAL.waveform.fade, i) : 0;
       writeRibbon(ribbons[i], samplesForRibbon || [0, 0], VISUAL.waveform.halfWidth * (1 - i * 0.04), fade);
     }
     const bins = frame2 && Array.isArray(frame2.bins) ? frame2.bins : [];
     const floor = -1.55;
     for (let i = 0; i < barCount; ++i) {
-      const target = clamp01(bins[i] || 0);
+      const target = softLimit(Math.max(0, bins[i] || 0), 1, VISUAL.limiter.knee);
       smoothBins[i] = follow(smoothBins[i], target, dt, VISUAL.attack, VISUAL.release);
       const height = 0.08 + smoothBins[i] * VISUAL.bars.height;
       const x = -6.4 + 12.8 * (i + 0.5) / barCount;
@@ -22653,6 +22845,7 @@ void main() {
       barDummy.updateMatrix();
       barMesh.setMatrixAt(i, barDummy.matrix);
       barColor.copy(VIOLET).lerp(accentColor, 0.35 + smoothBins[i] * 0.65);
+      barColor.multiplyScalar(VISUAL.bars.colorGain);
       barMesh.setColorAt(i, barColor);
       barDummy.position.set(x, floor - height * 0.22, 0);
       barDummy.scale.set(1, height * 0.38, 1);
@@ -22668,19 +22861,20 @@ void main() {
     if (barReflection.instanceColor)
       barReflection.instanceColor.needsUpdate = true;
     simTime += dt;
+    if (qualityHigh)
+      activeTrails = Math.max(1, Math.round(drive.trail));
     integrateParticles(dt);
     writeParticles();
-    const formScale = sceneCfg.form.baseScale + bass * sceneCfg.form.bassScale;
-    form.scale.setScalar(formScale);
+    form.scale.setScalar(drive.formScale);
     form.rotation.y = simTime * 0.35;
     form.rotation.x = simTime * 0.18;
     form.material.color.copy(accentColor);
     const uniforms = volumeMaterial.uniforms;
     uniforms.uCameraPos.value.copy(perspective.position);
-    uniforms.uTime.value = simTime * gradient.timeSpeed * 8;
+    uniforms.uTime.value = simTime * gradient.timeSpeed;
     uniforms.uAccent.value = accent;
-    uniforms.uLevel.value = level;
-    bloomPass.strength = VISUAL.bloom.base + bass * VISUAL.bloom.bass;
+    uniforms.uEnergy.value = drive.volumeEnergy;
+    bloomPass.strength = drive.bloom;
     bloomPass.radius = VISUAL.bloom.radius;
     bloomPass.threshold = VISUAL.bloom.threshold;
   }
@@ -22696,6 +22890,10 @@ void main() {
       renderPass.camera = ortho;
     }
     composer.render();
+  }
+  function step(dt) {
+    applyFrame(dt);
+    renderScene();
   }
   function frame(now2) {
     requestAnimationFrame(frame);
@@ -22716,8 +22914,7 @@ void main() {
       else if (!qualityHigh && fastFrames > 180)
         applyQuality(true);
     }
-    applyFrame(dt);
-    renderScene();
+    step(dt);
   }
   window.addEventListener("resize", resize);
   window.addEventListener("keydown", (event) => {
@@ -22727,6 +22924,7 @@ void main() {
     }
   }, true);
   window.wavisCapture = () => renderer.domElement.toDataURL("image/png");
+  window.wavisStep = (dt) => step(Math.min(0.05, Math.max(1e-3, Number(dt) || 0.016)));
   var backend = window.__JUCE__ && window.__JUCE__.backend;
   if (backend && typeof backend.addEventListener === "function") {
     backend.addEventListener("wavisFrame", (payload) => {
@@ -22736,7 +22934,8 @@ void main() {
   }
   resize();
   waveHistory.push(new Array(128).fill(0));
-  requestAnimationFrame(frame);
+  if (!window.__WAVIS_STEP__)
+    requestAnimationFrame(frame);
 })();
 /*! Bundled license information:
 
